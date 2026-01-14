@@ -1,0 +1,258 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  Int                @id @default(autoincrement())
+  name                String
+  username            String             @unique
+  email               String             @unique
+  phone               String?
+  location            String?
+  title               String?
+  company             String?
+  bio                 String?            @db.Text
+  avatar              String?
+  joinDate            DateTime           @default(now())
+  isVerified          Boolean            @default(false)
+  isMentor            Boolean            @default(false)
+  profileViews        Int                @default(0)
+  connections         Int                @default(0)
+  rating              Float              @default(0)
+  totalProjects       Int                @default(0)
+  mentoringSessions   Int                @default(0)
+  contributionStreak  Int                @default(0)
+  activeTemplateId    Int?               // Active portfolio template
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  
+  // Relations
+  activeTemplate      PortfolioTemplate? @relation(fields: [activeTemplateId], references: [id])
+  socialLinks         SocialLinks?
+  skills              Skill[]
+  companies           Company[]
+  projects            Project[]
+  achievements        Achievement[]
+  education           Education[]
+  publications        Publication[]
+  recommendations     Recommendation[]
+  codingProfiles      CodingProfile[]
+  
+  @@map("users")
+}
+
+model PortfolioTemplate {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  displayName String
+  description String?  @db.Text
+  thumbnail   String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  users       User[]
+  
+  @@map("portfolio_templates")
+}
+
+model SocialLinks {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  github    String?
+  linkedin  String?
+  twitter   String?
+  website   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("social_links")
+}
+
+model Skill {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  name      String
+  level     Int      @default(0) // 0-100
+  category  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("skills")
+}
+
+model Company {
+  id         Int          @id @default(autoincrement())
+  userId     Int
+  name       String
+  logo       String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  positions  Experience[]
+  
+  @@map("companies")
+}
+
+model Experience {
+  id           Int       @id @default(autoincrement())
+  companyId    Int
+  title        String
+  duration     String
+  location     String?
+  type         String    // Full-time, Part-time, Internship, etc.
+  description  String?   @db.Text
+  achievements String[]  // Array of achievement strings
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  @@map("experiences")
+}
+
+model Project {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  name         String
+  description  String?  @db.Text
+  image        String?
+  technologies String[] // Array of technology names
+  githubUrl    String?
+  liveUrl      String?
+  stars        Int      @default(0)
+  forks        Int      @default(0)
+  status       String   @default("Development") // Live, Development, Archived
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("projects")
+}
+
+model Achievement {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  title       String
+  description String?  @db.Text
+  date        String
+  icon        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("achievements")
+}
+
+model Education {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  degree       String
+  school       String
+  logo         String?
+  duration     String
+  location     String?
+  gpa          String?
+  description  String?  @db.Text
+  achievements String[] // Array of achievement strings
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("education")
+}
+
+model Publication {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  title       String
+  authors     String
+  journal     String
+  year        Int
+  type        String   // Journal Article, Conference Paper, Blog Post, etc.
+  citations   Int      @default(0)
+  doi         String?
+  abstract    String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("publications")
+}
+
+model Recommendation {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  recommender  String
+  title        String
+  company      String
+  relationship String
+  date         String
+  avatar       String?
+  text         String   @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("recommendations")
+}
+
+model CodingProfile {
+  id                   Int      @id @default(autoincrement())
+  userId               Int
+  platform             String
+  username             String
+  logo                 String?
+  
+  // Common fields
+  ranking              Int?
+  problemsSolved       Int      @default(0)
+  
+  // LeetCode specific
+  totalProblems        Int?
+  easyProblems         Int?
+  mediumProblems       Int?
+  hardProblems         Int?
+  contestRating        Int?
+  
+  // Codeforces specific
+  rating               Int?
+  maxRating            Int?
+  contestsParticipated Int?
+  rank                 String?
+  
+  // HackerRank specific
+  totalScore           Int?
+  certificates         String[] // Array of certificate names
+  skills               String[] // Array of skill names
+  
+  // Common arrays
+  badges               String[] // Array of badge names
+  
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, platform])
+  @@map("coding_profiles")
+}

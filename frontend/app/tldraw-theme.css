@@ -1,0 +1,84 @@
+/* Custom Tldraw theme override for Talenthium app */
+
+/* Dark theme styles */
+[data-theme="dark"] .tl-background,
+.tl-background {
+    background: #0a1813 !important;
+}
+
+[data-theme="dark"] .tl-canvas,
+.tl-canvas {
+    background: #0a1813 !important;
+}
+
+[data-theme="dark"] .tl-container,
+[data-theme="dark"] .tl-root,
+[data-theme="dark"] .tl-ui__main,
+.tl-container, .tl-root, .tl-ui__main {
+    background-color: #0a1813 !important;
+    color: #19fb9b !important;
+}
+
+[data-theme="dark"] .tl-ui__toolbar,
+[data-theme="dark"] .tl-ui__menu,
+[data-theme="dark"] .tl-ui__panel,
+.tl-ui__toolbar, .tl-ui__menu, .tl-ui__panel {
+    background: #0b1412 !important;
+    border-color: #19fb9b33 !important;
+}
+
+[data-theme="dark"] .tl-ui__button,
+[data-theme="dark"] .tl-ui__button:active,
+[data-theme="dark"] .tl-ui__button:focus,
+.tl-ui__button, .tl-ui__button:active, .tl-ui__button:focus {
+    background: #12221b !important;
+    color: #19fb9b !important;
+    border-radius: 8px !important;
+}
+
+[data-theme="dark"] .tl-ui__button[data-isactive='true'],
+.tl-ui__button[data-isactive='true'] {
+    background: #19fb9b !important;
+    color: #0a1813 !important;
+}
+
+/* Light theme styles */
+[data-theme="light"] .tl-background {
+    background: #f0fdf4 !important;
+}
+
+[data-theme="light"] .tl-canvas {
+    background: #f0fdf4 !important;
+}
+
+[data-theme="light"] .tl-container,
+[data-theme="light"] .tl-root,
+[data-theme="light"] .tl-ui__main {
+    background-color: #f0fdf4 !important;
+    color: #047857 !important;
+}
+
+[data-theme="light"] .tl-ui__toolbar,
+[data-theme="light"] .tl-ui__menu,
+[data-theme="light"] .tl-ui__panel {
+    background: rgba(255,255,255,0.9) !important;
+    border-color: rgba(16,185,129,0.3) !important;
+}
+
+[data-theme="light"] .tl-ui__button,
+[data-theme="light"] .tl-ui__button:active,
+[data-theme="light"] .tl-ui__button:focus {
+    background: rgba(255,255,255,0.8) !important;
+    color: #047857 !important;
+    border-radius: 8px !important;
+}
+
+[data-theme="light"] .tl-ui__button[data-isactive='true'] {
+    background: #10b981 !important;
+    color: white !important;
+}
+
+/* Hide watermark in both themes */
+.tl-ui__watermark, .tl-watermark {
+    display: none !important;
+}

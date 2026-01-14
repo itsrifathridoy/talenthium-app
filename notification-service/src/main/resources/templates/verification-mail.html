@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Verification - TALENTHIUM</title>
+</head>
+<body style="margin:0; padding:0; font-family: Arial, sans-serif; background-color:#f4f6f8; color:#333;">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#f4f6f8; padding: 40px 0;">
+    <tr>
+        <td align="center">
+            <!-- Container -->
+            <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff; border-radius:8px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.05);">
+                <!-- Logo -->
+                <tr>
+                    <td style="padding: 30px 40px; text-align:center; background: linear-gradient(90deg, #38b2ac, #3182ce);">
+              <span style="font-size: 32px; font-weight: 900; color: #ffffff; letter-spacing: 2px;">
+                TALENTHIUM
+              </span>
+                    </td>
+                </tr>
+
+                <!-- Body -->
+                <tr>
+                    <td style="padding: 30px 40px;">
+                        <h2 style="color: #111; font-size: 22px; margin-bottom: 16px;">Verify Your Email Address</h2>
+                        <p style="font-size: 15px; color: #555; line-height: 1.6; margin-bottom: 24px;">
+                            Hello <strong th:text="${name}">User</strong>,
+                            <br><br>
+                            <span th:if="${role == 'ROLE_RECRUITER'}">
+                  Thank you for joining <strong>TALENTHIUM</strong> as a recruiter.
+                  Verify your email address to start posting jobs and connecting with top talent.
+                </span>
+                            <span th:if="${role == 'ROLE_DEVELOPER'}">
+                  Thank you for joining <strong>TALENTHIUM</strong> as a developer.
+                  Verify your email address to start applying for jobs and showcasing your skills.
+                </span>
+                        </p>
+
+                        <!-- Button -->
+                        <p style="text-align:center; margin-bottom: 30px;">
+                            <a th:href="${verificationLink}"
+                               style="background-color: #38b2ac; color: #ffffff; padding: 12px 30px;
+                          text-decoration: none; font-weight: bold; border-radius: 6px;
+                          display: inline-block;">
+                                Verify Email
+                            </a>
+                        </p>
+
+                        <p style="font-size: 13px; color: #888; line-height: 1.5;">
+                            If you didn’t create an account with TALENTHIUM, you can safely ignore this email.
+                            This verification link will expire in <strong>24 hours</strong>.
+                        </p>
+                    </td>
+                </tr>
+
+                <!-- Footer -->
+                <tr>
+                    <td style="padding: 20px 40px; background-color:#f9fafb; text-align:center; font-size: 12px; color:#aaa;">
+                        &copy; <span th:text="${#dates.format(#dates.createNow(), 'yyyy')}">2025</span> TALENTHIUM. All rights reserved.<br>
+                        123 Business Street, Dhaka, Bangladesh
+                    </td>
+                </tr>
+            </table>
+            <!-- End Container -->
+        </td>
+    </tr>
+</table>
+</body>
+</html>

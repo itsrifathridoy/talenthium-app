@@ -1,0 +1,224 @@
+version: '3.8'
+
+networks:
+  internal:
+    driver: bridge
+
+services:
+  # Postgres Databases
+  auth-db:
+    image: postgres:latest
+    container_name: auth-service-db
+    restart: unless-stopped
+    ports:
+      - "5001:5432"
+    environment:
+      POSTGRES_USER: auth
+      POSTGRES_PASSWORD: auth
+      POSTGRES_DB: auth
+    volumes:
+      - ./data/auth-db:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  job-db:
+    image: postgres:latest
+    container_name: job-service-db
+    restart: unless-stopped
+    ports:
+      - "7001:5432"
+    environment:
+      POSTGRES_USER: job
+      POSTGRES_PASSWORD: job
+      POSTGRES_DB: job
+    volumes:
+      - ./data/job-db:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  project-db:
+    image: postgres:latest
+    container_name: project-service-db
+    restart: unless-stopped
+    ports:
+      - "4001:5432"
+    environment:
+      POSTGRES_USER: project
+      POSTGRES_PASSWORD: project
+      POSTGRES_DB: project
+    volumes:
+      - ./data/project-db:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  # Redis
+  auth-redis:
+    image: redis/redis-stack:latest
+    container_name: auth-service-redis
+    restart: unless-stopped
+    ports:
+      - "5002:6379"
+      - "5003:8001"
+    volumes:
+      - ./data/auth-redis:/data
+    networks:
+      - internal
+
+  # Kafka Cluster
+  kafka1:
+    image: confluentinc/cp-kafka:7.8.0
+    container_name: kafka1
+    hostname: kafka1
+    ports:
+      - "9092:9092"
+      - "19092:19092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_BROKER_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093,4@kafka4:9093,5@kafka5:9093"
+      KAFKA_LISTENERS: PLAINTEXT://kafka1:9092,PLAINTEXT_HOST://0.0.0.0:19092,CONTROLLER://kafka1:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092,PLAINTEXT_HOST://localhost:19092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      CLUSTER_ID: EmptNWtoR4GGWx-BH6nGLQ
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+    volumes:
+      - ./data/kafka1:/var/lib/kafka/data
+    networks:
+      - internal
+
+  kafka2:
+    image: confluentinc/cp-kafka:7.8.0
+    container_name: kafka2
+    hostname: kafka2
+    ports:
+      - "9094:9092"
+      - "19094:19092"
+      - "9095:9093"
+    environment:
+      KAFKA_NODE_ID: 2
+      KAFKA_BROKER_ID: 2
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093,4@kafka4:9093,5@kafka5:9093"
+      KAFKA_LISTENERS: PLAINTEXT://kafka2:9092,PLAINTEXT_HOST://0.0.0.0:19092,CONTROLLER://kafka2:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092,PLAINTEXT_HOST://localhost:19094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      CLUSTER_ID: EmptNWtoR4GGWx-BH6nGLQ
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+    volumes:
+      - ./data/kafka2:/var/lib/kafka/data
+    networks:
+      - internal
+
+  kafka3:
+    image: confluentinc/cp-kafka:7.8.0
+    container_name: kafka3
+    hostname: kafka3
+    ports:
+      - "9096:9092"
+      - "19096:19092"
+      - "9097:9093"
+    environment:
+      KAFKA_NODE_ID: 3
+      KAFKA_BROKER_ID: 3
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093,4@kafka4:9093,5@kafka5:9093"
+      KAFKA_LISTENERS: PLAINTEXT://kafka3:9092,PLAINTEXT_HOST://0.0.0.0:19092,CONTROLLER://kafka3:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9092,PLAINTEXT_HOST://localhost:19096
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      CLUSTER_ID: EmptNWtoR4GGWx-BH6nGLQ
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+    volumes:
+      - ./data/kafka3:/var/lib/kafka/data
+    networks:
+      - internal
+
+  kafka4:
+    image: confluentinc/cp-kafka:7.8.0
+    container_name: kafka4
+    hostname: kafka4
+    ports:
+      - "9098:9092"
+      - "19098:19092"
+      - "9099:9093"
+    environment:
+      KAFKA_NODE_ID: 4
+      KAFKA_BROKER_ID: 4
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093,4@kafka4:9093,5@kafka5:9093"
+      KAFKA_LISTENERS: PLAINTEXT://kafka4:9092,PLAINTEXT_HOST://0.0.0.0:19092,CONTROLLER://kafka4:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka4:9092,PLAINTEXT_HOST://localhost:19098
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      CLUSTER_ID: EmptNWtoR4GGWx-BH6nGLQ
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+    volumes:
+      - ./data/kafka4:/var/lib/kafka/data
+    networks:
+      - internal
+
+  kafka5:
+    image: confluentinc/cp-kafka:7.8.0
+    container_name: kafka5
+    hostname: kafka5
+    ports:
+      - "9100:9092"
+      - "19100:19092"
+      - "9101:9093"
+    environment:
+      KAFKA_NODE_ID: 5
+      KAFKA_BROKER_ID: 5
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka1:9093,2@kafka2:9093,3@kafka3:9093,4@kafka4:9093,5@kafka5:9093"
+      KAFKA_LISTENERS: PLAINTEXT://kafka5:9092,PLAINTEXT_HOST://0.0.0.0:19092,CONTROLLER://kafka5:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka5:9092,PLAINTEXT_HOST://localhost:19100
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      CLUSTER_ID: EmptNWtoR4GGWx-BH6nGLQ
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+    volumes:
+      - ./data/kafka5:/var/lib/kafka/data
+    networks:
+      - internal
+
+  # Kafka UI
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-cluster-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka1:9092,kafka2:9092,kafka3:9092,kafka4:9092,kafka5:9092
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+      - kafka4
+      - kafka5
+    networks:
+      - internal

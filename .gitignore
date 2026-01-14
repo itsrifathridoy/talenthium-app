@@ -1,0 +1,5 @@
+docker-config
+.idea
+.env
+data
+**/src/main/resources/application-dev.properties
