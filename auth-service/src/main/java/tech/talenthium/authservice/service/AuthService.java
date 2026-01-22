@@ -79,7 +79,16 @@ public class AuthService {
                 .role(developerRegisterRequest.getRole())
                 .build();
 
-        userRepository.save(user);
+        User createdUser = userRepository.save(user);
+        UserCreatedEvent userCreatedEvent = UserCreatedEvent.builder()
+                .userId(createdUser.getUserID())
+                .email(createdUser.getEmail())
+                .username(createdUser.getUsername())
+                .name(createdUser.getName())
+                .role(createdUser.getRole())
+                .createdAt(createdUser.getRegisterDate())
+                .build();
+        userCreatedPublisher.emitEvent(userCreatedEvent);
     }
 
     public TokenPair login(LoginRequest loginRequest) {

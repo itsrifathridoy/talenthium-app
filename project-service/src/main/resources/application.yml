@@ -4,6 +4,14 @@ eureka:
       defaultZone: http://localhost:8761/eureka/
   instance:
     prefer-ip-address: true
+
+spring:
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: admin
+
 github:
   app-id: 1956914                      # your GitHub App ID
   app-slug: talenthium            # slug from GitHub App URL
@@ -11,4 +19,8 @@ github:
   webhook-secret: secret1234   # also store in secrets manager
   callback-url: http://localhost:8088/project-service/github/callback
   install-token-secret: secret1234
+  oauth:
+    client-id: Ov23liWn0x7Mfr8Z97if
+    client-secret: 55c8b23302a9bd831bcccdc952d29c48daaabd2b
+    redirect-uri: http://localhost:8088/project-service/github/oauth/callback
 

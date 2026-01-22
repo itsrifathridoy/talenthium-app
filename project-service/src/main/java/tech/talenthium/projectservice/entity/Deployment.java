@@ -1,5 +1,6 @@
 package tech.talenthium.projectservice.entity;
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import tech.talenthium.projectservice.type.DeploymentStatus;
@@ -21,6 +22,7 @@ public class Deployment {
 
     @ManyToOne
     @NotNull
+    @JsonBackReference(value = "project-deployments")
     private Project project;
 
     @NotNull

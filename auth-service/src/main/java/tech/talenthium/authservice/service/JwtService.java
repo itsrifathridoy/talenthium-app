@@ -113,7 +113,7 @@ public class JwtService {
 
         // Generate token
         Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + jwtExpirationMs);
+        Date expiryDate = new Date(now.getTime() + refreshExpirationMs);
 
         return Jwts.builder()
                 .header()

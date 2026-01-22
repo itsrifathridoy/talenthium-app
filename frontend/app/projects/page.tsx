@@ -1,14 +1,30 @@
 "use client";
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { DashboardLayout } from "../../components/layouts/DashboardLayout";
 import { GlassCard } from "../../components/GlassCard";
 import { FaPlus, FaFilter, FaChevronDown, FaCheck } from 'react-icons/fa';
+import { FiAlertCircle, FiLoader } from 'react-icons/fi';
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
 import * as Select from '@radix-ui/react-select';
 import Link from "next/link";
+import { getAllProjects, getMyProjects, checkProjectCreationCapability } from "../../lib/project-service";
+import { useAuth } from "@/lib/auth-context";
 
-const projects = [
+interface Project {
+    id: number;
+    name: string;
+    tagline: string;
+    shortDescription: string;
+    detailedDescription: string;
+    liveLink: string | null;
+    gitLink: string;
+    privacy: string;
+    ownerId: number;
+}
+
+const mockProjects = [
     {
         icon: <span className='font-bold text-2xl text-black'>S</span>,
         iconBg: 'bg-yellow-400',
@@ -126,10 +142,68 @@ const contributedProjects = [
 ];
 
 export default function ProjectsPage() {
+    const router = useRouter();
+    const { user } = useAuth();
     const [theme, setTheme] = useState<"light" | "dark">("light");
     const [tab, setTab] = useState<'my' | 'contributed'>('my');
     const [filterOpen, setFilterOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [contributedProjects, setContributedProjects] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [capabilityLoading, setCapabilityLoading] = useState(true);
+    const [hasGithubAccess, setHasGithubAccess] = useState(false);
+
+    // Check capability first
+    useEffect(() => {
+        const checkCapability = async () => {
+            if (!user?.userID) {
+                setCapabilityLoading(false);
+                return;
+            }
+
+            try {
+                const response = await checkProjectCreationCapability();
+                setHasGithubAccess(response.data.canCreateProject);
+            } catch (err: any) {
+                console.error('Failed to check capability:', err);
+                setHasGithubAccess(false);
+            } finally {
+                setCapabilityLoading(false);
+            }
+        };
+
+        checkCapability();
+    }, [user?.userID]);
+
+    // Fetch projects on mount and when tab changes
+    useEffect(() => {
+        const fetchProjects = async () => {
+            setIsLoading(true);
+            setError(null);
+            try {
+                if (tab === 'my') {
+                    const response = await getMyProjects();
+                    const list = Array.isArray(response.data) ? response.data : [];
+                    setProjects(list);
+                } else {
+                    // For contributed projects, we'll use all projects for now
+                    // In the future, this should be a separate endpoint
+                    const response = await getAllProjects();
+                    const list = Array.isArray(response.data) ? response.data : [];
+                    setContributedProjects(list);
+                }
+            } catch (err: any) {
+                console.error('Failed to fetch projects:', err);
+                setError(err.response?.data?.message || 'Failed to load projects');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchProjects();
+    }, [tab]);
 
     useEffect(() => {
         const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null;
@@ -237,6 +311,155 @@ export default function ProjectsPage() {
             theme={theme}
             setTheme={setTheme}
         >
+            {capabilityLoading ? (
+                <div className="flex items-center justify-center min-h-[400px]">
+                    <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                        className={theme === 'dark' ? 'text-[#13ff8c]' : 'text-emerald-500'}
+                    >
+                        <FiLoader size={48} />
+                    </motion.div>
+                </div>
+            ) : !hasGithubAccess ? (
+                <div className="p-8">
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5 }}
+                        className="max-w-3xl mx-auto"
+                    >
+                        <div className={`relative overflow-hidden rounded-2xl p-12 ${
+                            theme === 'dark'
+                                ? 'bg-gradient-to-br from-slate-800/90 via-slate-800/50 to-slate-900/90 border border-white/10'
+                                : 'bg-gradient-to-br from-white via-emerald-50/30 to-white border border-emerald-200/50 shadow-xl'
+                        } backdrop-blur-sm`}>
+                            {/* Decorative elements */}
+                            <div className={`absolute top-0 right-0 w-64 h-64 ${
+                                theme === 'dark' 
+                                    ? 'bg-[#13ff8c]/5' 
+                                    : 'bg-emerald-500/5'
+                            } rounded-full blur-3xl -z-10`}></div>
+                            <div className={`absolute bottom-0 left-0 w-64 h-64 ${
+                                theme === 'dark' 
+                                    ? 'bg-blue-500/5' 
+                                    : 'bg-blue-500/5'
+                            } rounded-full blur-3xl -z-10`}></div>
+
+                            {/* Icon */}
+                            <motion.div 
+                                initial={{ scale: 0 }}
+                                animate={{ scale: 1 }}
+                                transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                                className="flex justify-center mb-8"
+                            >
+                                <div className={`relative w-24 h-24 rounded-full flex items-center justify-center ${
+                                    theme === 'dark'
+                                        ? 'bg-gradient-to-br from-[#13ff8c]/20 to-blue-500/20 border-2 border-[#13ff8c]/30'
+                                        : 'bg-gradient-to-br from-emerald-500/10 to-blue-500/10 border-2 border-emerald-500/30'
+                                }`}>
+                                    <svg className={`w-12 h-12 ${theme === 'dark' ? 'text-[#13ff8c]' : 'text-emerald-600'}`} fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                                    </svg>
+                                    <div className={`absolute inset-0 rounded-full animate-pulse ${
+                                        theme === 'dark' ? 'bg-[#13ff8c]/20' : 'bg-emerald-500/20'
+                                    }`}></div>
+                                </div>
+                            </motion.div>
+
+                            {/* Title */}
+                            <motion.h1 
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.3 }}
+                                className={`text-4xl font-bold text-center mb-4 ${
+                                    theme === 'dark' ? 'text-white' : 'text-gray-900'
+                                }`}
+                            >
+                                Connect Your GitHub
+                            </motion.h1>
+
+                            {/* Subtitle */}
+                            <motion.p 
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.4 }}
+                                className={`text-center text-lg mb-10 ${
+                                    theme === 'dark' ? 'text-slate-300' : 'text-gray-600'
+                                }`}
+                            >
+                                Link your GitHub account to unlock powerful project management features
+                            </motion.p>
+
+                            {/* Features Grid */}
+                            <motion.div 
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.5 }}
+                                className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10"
+                            >
+                                {[
+                                    { icon: '🚀', title: 'Auto-sync Projects', desc: 'Sync repositories instantly' },
+                                    { icon: '📊', title: 'Track Commits', desc: 'Monitor contributions live' },
+                                    { icon: '👥', title: 'Team Insights', desc: 'Collaborate efficiently' }
+                                ].map((feature, idx) => (
+                                    <div key={idx} className={`p-4 rounded-xl text-center ${
+                                        theme === 'dark'
+                                            ? 'bg-white/5 border border-white/10'
+                                            : 'bg-white border border-emerald-100'
+                                    }`}>
+                                        <div className="text-3xl mb-2">{feature.icon}</div>
+                                        <h3 className={`font-semibold mb-1 ${
+                                            theme === 'dark' ? 'text-white' : 'text-gray-900'
+                                        }`}>{feature.title}</h3>
+                                        <p className={`text-sm ${
+                                            theme === 'dark' ? 'text-slate-400' : 'text-gray-600'
+                                        }`}>{feature.desc}</p>
+                                    </div>
+                                ))}
+                            </motion.div>
+
+                            {/* CTA Button */}
+                            <motion.div 
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.6 }}
+                                className="text-center"
+                            >
+                                <a
+                                    href="/settings/github"
+                                    className={`inline-flex items-center gap-3 px-10 py-4 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 ${
+                                        theme === 'dark'
+                                            ? 'bg-gradient-to-r from-[#13ff8c] to-[#0ea574] text-black shadow-[0_0_30px_rgba(19,255,140,0.3)] hover:shadow-[0_0_40px_rgba(19,255,140,0.5)]'
+                                            : 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg hover:shadow-xl'
+                                    }`}
+                                >
+                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                                    </svg>
+                                    Link GitHub Account
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                    </svg>
+                                </a>
+                            </motion.div>
+
+                            {/* Help text */}
+                            <motion.p 
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 0.7 }}
+                                className={`text-center text-sm mt-6 ${
+                                    theme === 'dark' ? 'text-slate-400' : 'text-gray-500'
+                                }`}
+                            >
+                                Secure OAuth connection • Takes less than 30 seconds
+                            </motion.p>
+                        </div>
+                    </motion.div>
+                </div>
+            ) : (
+                <>
             {/* Tabs, Search, and Add Project button in one row */}
             <div className="sticky top-0 z-20 flex items-center justify-between mb-6 gap-4 flex-wrap">
                 <div className={`flex items-center gap-2 border ${theme === 'dark' ? 'bg-white/10 border-white/20' : 'bg-white/90 border-gray-300 shadow-sm'} rounded-full p-1 shadow-lg backdrop-blur-[6px]`}>
@@ -313,20 +536,60 @@ export default function ProjectsPage() {
                         theme === 'dark' ? 'focus:ring-[#13ff8c]' : 'focus:ring-emerald-500'
                     } hover:scale-105`}
                     type="button"
+                    onClick={() => router.push('/projects/create')}
                 >
                     <FaPlus className="text-base" />
                     <span>Add Project</span>
                 </button>
             </div>
-            {/* Filter projects by search term (title or description, case-insensitive) */}
+            {/* Filter projects by search term */}
             {(() => {
                 const allProjects = tab === 'my' ? projects : contributedProjects;
-                const filtered = allProjects.filter(p =>
-                    p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    p.description.toLowerCase().includes(searchTerm.toLowerCase())
+                
+                // Transform API data to match display format
+                const displayProjects = (Array.isArray(allProjects) ? allProjects : []).map((p: Project) => ({
+                    id: p.id,
+                    icon: <span className='font-bold text-2xl text-white'>{p.name.charAt(0).toUpperCase()}</span>,
+                    iconBg: `bg-${['blue', 'green', 'purple', 'yellow', 'pink', 'red'][p.id % 6]}-400`,
+                    title: p.name,
+                    link: p.liveLink || p.gitLink,
+                    description: p.shortDescription,
+                    tagline: p.tagline,
+                    gitLink: p.gitLink,
+                    privacy: p.privacy,
+                }));
+                
+                const filtered = displayProjects.filter(p =>
+                    p.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    p.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    p.tagline?.toLowerCase().includes(searchTerm.toLowerCase())
                 );
+                
                 return (
                     <AnimatePresence mode="wait" initial={false}>
+                        {isLoading ? (
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="col-span-full flex justify-center items-center py-20"
+                            >
+                                <div className={`text-lg ${theme === 'dark' ? 'text-white/60' : 'text-gray-500'}`}>
+                                    Loading projects...
+                                </div>
+                            </motion.div>
+                        ) : error ? (
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="col-span-full flex justify-center items-center py-20"
+                            >
+                                <div className={`text-lg ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>
+                                    {error}
+                                </div>
+                            </motion.div>
+                        ) : (
                         <motion.div
                             key={tab + '-' + searchTerm}
                             initial={{ opacity: 0, y: 24 }}
@@ -337,7 +600,7 @@ export default function ProjectsPage() {
                         >
                             {filtered.length > 0 ? (
                                 filtered.map((project, i) => (
-                                    <Link key={i} href={"/projects/1"} className="w-full">
+                                    <Link key={project.id} href={`/projects/${project.id}`} className="w-full">
                                         <GlassCard
                                             key={i}
                                             theme={theme}
@@ -362,18 +625,20 @@ export default function ProjectsPage() {
                                             </div>
                                             {/* Description */}
                                             <div className={`text-sm mb-4 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>{project.description}</div>
-                                            {/* Progress Bar */}
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <div className={`flex-1 h-1.5 ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'} rounded-full overflow-hidden`}>
-                                                    <div className={`h-1.5 ${
-                                                        theme === 'dark' ? 'bg-[#13ff8c]' : 'bg-emerald-500'
-                                                    } rounded-full`} style={{ width: `${project.progress}%` }}></div>
-                                                </div>
-                                                <span className={`text-xs font-bold ml-2 ${
-                                                    theme === 'dark' ? 'text-[#13ff8c]' : 'text-emerald-600'
-                                                }`}>{project.progress}%</span>
+                                            {/* Privacy Badge */}
+                                            <div className="mt-auto flex items-center justify-between">
+                                                <span className={`text-xs px-2 py-1 rounded ${
+                                                    project.privacy === 'PUBLIC'
+                                                        ? theme === 'dark' 
+                                                            ? 'bg-green-500/20 text-green-400' 
+                                                            : 'bg-green-100 text-green-700'
+                                                        : theme === 'dark'
+                                                            ? 'bg-orange-500/20 text-orange-400'
+                                                            : 'bg-orange-100 text-orange-700'
+                                                }`}>
+                                                    {project.privacy}
+                                                </span>
                                             </div>
-
                                         </GlassCard>
                                     </Link>
                                 ))
@@ -423,7 +688,7 @@ export default function ProjectsPage() {
                                                         ? 'bg-[#13ff8c] text-black hover:bg-[#19fb9b]'
                                                         : 'bg-emerald-500 text-white hover:bg-emerald-600'
                                                 } font-semibold shadow-lg transition`}
-                                                onClick={() => {/* TODO: navigate to new project page or open modal */}}
+                                                onClick={() => router.push('/projects/create')}
                                                 type="button"
                                             >
                                                 + New project
@@ -433,6 +698,7 @@ export default function ProjectsPage() {
                                 </motion.div>
                             )}
                         </motion.div>
+                        )}
                     </AnimatePresence>
                 );
             })()}
@@ -792,6 +1058,8 @@ export default function ProjectsPage() {
                     </motion.div>
                 )}
             </AnimatePresence>
+            </>
+            )}
         </DashboardLayout>
     );
 }

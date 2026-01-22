@@ -128,8 +128,11 @@ class AuthService {
         if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK') {
           throw new Error('Unable to connect to server. Please check if the API server is running.');
         }
+        // If 401 (not authenticated), return null instead of throwing
+        // This is normal - user is just not logged in yet
         if (error.response?.status === 401) {
-          throw new Error('Authentication required. Please log in again.');
+          console.log('User not authenticated (401) - returning null');
+          return null;
         }
         if (error.response?.status === 403) {
           throw new Error('Access denied.');

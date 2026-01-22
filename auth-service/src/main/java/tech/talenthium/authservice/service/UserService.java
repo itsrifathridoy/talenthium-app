@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import tech.talenthium.authservice.dto.event.UserCreatedEvent;
 import tech.talenthium.authservice.entity.Role;
 import tech.talenthium.authservice.entity.User;
+import tech.talenthium.authservice.kafka.publisher.UserCreatedPublisher;
 import tech.talenthium.authservice.repository.UserRepository;
 
 import java.util.Optional;
@@ -19,6 +20,8 @@ import java.util.UUID;
 public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final UserCreatedPublisher userCreatedPublisher;
+
 
     public boolean usernameExists(String username) { return userRepository.existsByUsername(username); }
     public boolean emailExists(String email) { return userRepository.existsByEmail(email); }
@@ -58,6 +61,19 @@ public class UserService {
                 .role(Role.ROLE_NOT_ASSIGN)
                 .build();
 
-        return userRepository.save(user);
+        User createdUser = userRepository.save(user);
+
+        UserCreatedEvent userCreatedEvent = UserCreatedEvent.builder()
+                .userId(createdUser.getUserID())
+                .email(createdUser.getEmail())
+                .username(createdUser.getUsername())
+                .name(createdUser.getName())
+                .role(createdUser.getRole())
+                .createdAt(createdUser.getRegisterDate())
+                .build();
+        userCreatedPublisher.emitEvent(userCreatedEvent);
+
+        return createdUser;
+
     }
 }

@@ -1,9 +1,11 @@
 package tech.talenthium.projectservice.entity;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
+import java.time.Instant;
 import java.util.List;
 
 @Entity
@@ -21,6 +23,7 @@ public class Contribution {
 
     @ManyToOne
     @NotNull
+    @JsonBackReference(value = "project-contributions")
     private Project project;
 
     @ManyToOne
@@ -28,16 +31,33 @@ public class Contribution {
     private Contributor contributor;
 
     @NotNull
+    @Column(unique = false)
+    private String commitSha;
+
+    @NotNull
     private String type;
-    @NotNull
-    private String commit;
-    @NotNull
-    private String commitSummary;
+
+    @Column(name = "branch", nullable = false)
+    private String branch;
+
     @NotNull
     @Column(columnDefinition = "TEXT")
-    private String detailedDes;
+    private String commitMessage;
+
+    @Column(columnDefinition = "TEXT")
+    private String commitDescription;
 
     @ElementCollection
     private List<String> techStack;
 
+    @Column(nullable = false)
+    private Instant committedDate;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = Instant.now();
+    }
 }

@@ -30,6 +30,12 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
     @Value("${app.oauth2.redirect-uri:http://localhost:3000}")
     private String redirectUri;
 
+        @Value("${app.jwt.expiration}")
+        private long accessExpirationMs;
+
+        @Value("${app.jwt.refresh-expiration}")
+        private long refreshExpirationMs;
+
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request,
                                         HttpServletResponse response,
@@ -48,7 +54,7 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
                 .sameSite("None")
                 .secure(true)
                 .path("/")
-                .maxAge(Math.toIntExact(9999999))
+                .maxAge(Math.toIntExact(refreshExpirationMs / 1000))
                 .build();
         response.addHeader("Set-Cookie", refresh_token.toString());
 
@@ -57,7 +63,7 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
                 .sameSite("None")
                 .secure(true)
                 .path("/")
-                .maxAge(Math.toIntExact(9999999))
+                .maxAge(Math.toIntExact(accessExpirationMs / 1000))
                 .build();
         response.addHeader("Set-Cookie", access_token.toString());
         response.sendRedirect(redirectUri);

@@ -17,37 +17,45 @@ import tech.talenthium.projectservice.type.Privacy;
 public class ProjectCreateRequest {
     @NotBlank(message = "Project name cannot be blank")
     private String name;
-    @NotBlank(message = "Project tagline cannot be blank")
-    private String tagline;
+
+    // optional slogan/tagline
+    private String slogan;
 
     @NotBlank(message = "Short description cannot be blank")
-    @Size(min = 50, max = 1000, message = "Short description must be between 50 and 1000 characters")
+    @Size(min = 10, max = 1000, message = "Short description must be between 10 and 1000 characters")
     private String shortDescription;
 
+    @NotBlank(message = "Detailed description cannot be blank")
+    @Size(min = 20, message = "Detailed description must be between 20 and 4000 characters")
     private String detailedDescription;
 
-    @NotBlank(message = "Live link is required")
     @ValidURL
     @UniqueLiveLink
-    private String liveLink;
+    private String projectLink;
 
-    @NotBlank(message = "Git link is required")
+    @NotBlank(message = "GitHub repository is required")
     @UniqueGitLink
-    private String gitLink;
+    private String githubRepository; // full name owner/repo
 
-    @NotNull(message = "Privacy setting is required")
-    private Privacy privacy;
+    // Optional metadata from GitHub selector
+    private String githubRepositoryId;
+    private String defaultBranch;
+
+    // Default to PUBLIC if not supplied
+    private Privacy privacy = Privacy.PUBLIC;
 
     public Project toEntity(Long ownerId) {
+        // Map DTO fields to entity schema
         return Project.builder()
-                .name(this.name)
-                .tagline(this.tagline)
-                .shortDescription(this.shortDescription)
-                .detailedDescription(this.detailedDescription)
-                .liveLink(this.liveLink)
-                .gitLink(this.gitLink)
-                .privacy(this.privacy)
-                .ownerId(ownerId)
-                .build();
+            .name(this.name)
+                .tagline(this.slogan == null ? "" : this.slogan)
+            .shortDescription(this.shortDescription)
+            .detailedDescription(this.detailedDescription)
+            .liveLink(this.projectLink)
+            .gitLink(this.githubRepository)
+            .defaultBranch(this.defaultBranch)
+            .privacy(this.privacy == null ? Privacy.PUBLIC : this.privacy)
+            .ownerId(ownerId)
+            .build();
     }
 }

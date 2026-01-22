@@ -2,6 +2,8 @@ package tech.talenthium.projectservice.entity;
 
 import jakarta.validation.constraints.NotNull;
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.*;
 import tech.talenthium.projectservice.annotation.UniqueGitLink;
 import tech.talenthium.projectservice.type.Privacy;
@@ -35,15 +37,18 @@ public class Project {
     private String shortDescription;
 
     @Column(columnDefinition = "TEXT")
+    @Basic(fetch = FetchType.LAZY)
     private String detailedDescription;
 
-    @NotNull
-    @Column(unique = true,nullable = false)
+    @Column(unique = true, nullable = true)
     private String liveLink;
 
     @NotNull
     @Column(unique = true,nullable = false)
     private String gitLink;
+
+    @Column(name = "default_branch")
+    private String defaultBranch;
 
     @NotNull
     @Enumerated(EnumType.STRING)
@@ -56,12 +61,15 @@ public class Project {
 
     // Relations
     @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonManagedReference(value = "project-contributors")
     private List<Contributor> contributors = new ArrayList<>();
 
-    @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @JsonManagedReference(value = "project-contributions")
     private List<Contribution> contributions = new ArrayList<>();
 
-    @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @JsonManagedReference(value = "project-deployments")
     private List<Deployment> deployments = new ArrayList<>();
 
     @ManyToMany

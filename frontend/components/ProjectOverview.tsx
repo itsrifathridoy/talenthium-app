@@ -1,7 +1,14 @@
 import React from "react";
-import ReactMarkdown from "react-markdown";
+import dynamic from "next/dynamic";
 import { FaReact, FaNodeJs, FaPython } from "react-icons/fa";
 import { SiNextdotjs, SiTypescript, SiTailwindcss } from "react-icons/si";
+import "@uiw/react-md-editor/markdown-editor.css";
+import "@uiw/react-markdown-preview/markdown.css";
+
+const MarkdownPreview = dynamic(
+  () => import("@uiw/react-markdown-preview"),
+  { ssr: false }
+);
 
 export type ProjectOverviewProps = {
   project: {
@@ -33,12 +40,15 @@ export const ProjectOverview: React.FC<ProjectOverviewProps> = ({ project, theme
           theme === 'dark' ? 'text-white' : 'text-gray-900'
         }`}>{project.shortDescription}</p>
       </div>
-      <div className={`max-w-none ${
-        theme === 'dark' 
-          ? 'prose prose-invert text-white/90' 
-          : 'prose prose-gray text-gray-700'
-      } bg-transparent`}>
-        <ReactMarkdown>{project.longDescription}</ReactMarkdown>
+      <div className="markdown-body" data-color-mode={theme}>
+        <MarkdownPreview 
+          source={project.longDescription} 
+          style={{ 
+            backgroundColor: 'transparent',
+            color: theme === 'dark' ? 'rgba(255, 255, 255, 0.9)' : '#374151',
+            padding: 0
+          }}
+        />
       </div>
       <div className="flex flex-wrap gap-3 mt-4">
         {project.techStack.map((tech, i) => (

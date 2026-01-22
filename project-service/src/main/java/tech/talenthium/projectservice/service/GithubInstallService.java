@@ -19,6 +19,11 @@ public class GithubInstallService {
                         new NotFoundException("You're not connect to any github account yet.")
                         );
     }
+
+    @Transactional
+    public void deleteGithubInstallation(long ownerId) {
+        githubInstallRepo.findByOwnerId(ownerId).ifPresent(githubInstallRepo::delete);
+    }
     @Transactional
     public void saveGithubInstallation(String installationId, long ownerId, JsonNode repos){
         // Check if installation already exists for this owner
