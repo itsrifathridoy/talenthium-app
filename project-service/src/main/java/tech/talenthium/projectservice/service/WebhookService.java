@@ -26,6 +26,7 @@ public class WebhookService {
     private final ProjectRepository projectRepository;
     private final ContributionRepository contributionRepository;
     private final ContributorRepository contributorRepository;
+    private final CommitAnalysisService commitAnalysisService;
 
     /**
      * Handle installation deleted webhook event
@@ -141,7 +142,7 @@ public class WebhookService {
 
             // Process commits for each matching project
             for (Project project : matchingProjects) {
-                processCommitsForProject(project, commitsNode);
+                processCommitsForProject(project, commitsNode, repoFullName);
             }
 
         } catch (Exception e) {
@@ -150,9 +151,10 @@ public class WebhookService {
     }
 
     /**
-     * Process commits from webhook payload and create/update contributions and contributors
+     * Process commits from webhook payload and create/update contributions and contributors.
+     * Triggers async AI analysis for each newly saved commit.
      */
-    private void processCommitsForProject(Project project, JsonNode commits) {
+    private void processCommitsForProject(Project project, JsonNode commits, String repoFullName) {
         int saved = 0;
         int skipped = 0;
 
@@ -177,20 +179,12 @@ public class WebhookService {
                 String authorEmail = authorNode.path("email").asText();
                 String authorUsername = authorNode.path("username").asText();
 
-                // If username is missing, try to extract from committer
                 if (authorUsername == null || authorUsername.isEmpty()) {
                     authorUsername = commit.path("committer").path("username").asText();
                 }
 
-                // Find or create contributor
-                Contributor contributor = findOrCreateContributor(
-                        project,
-                        authorName,
-                        authorUsername,
-                        authorEmail
-                );
+                Contributor contributor = findOrCreateContributor(project, authorName, authorUsername, authorEmail);
 
-                // Parse timestamp
                 Instant committedDate;
                 try {
                     committedDate = ZonedDateTime.parse(timestamp).toInstant();
@@ -199,7 +193,6 @@ public class WebhookService {
                     log.warn("Failed to parse timestamp {}, using current time", timestamp);
                 }
 
-                // Create contribution
                 Contribution contribution = Contribution.builder()
                         .project(project)
                         .contributor(contributor)
@@ -209,10 +202,14 @@ public class WebhookService {
                         .committedDate(committedDate)
                         .build();
 
-                contributionRepository.save(contribution);
+                Contribution saved_ = contributionRepository.save(contribution);
                 saved++;
 
                 log.debug("Saved commit: {} by {}", commitId.substring(0, 7), authorName);
+
+                // Trigger async AI summary generation for the new commit
+                commitAnalysisService.analyzeAndStoreAsync(
+                        saved_.getId(), project.getOwnerId(), repoFullName, commitId);
 
             } catch (Exception e) {
                 log.warn("Error processing commit: {}", e.getMessage());

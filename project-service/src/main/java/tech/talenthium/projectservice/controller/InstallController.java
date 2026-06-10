@@ -397,5 +397,17 @@ public class InstallController {
         }
     }
 
-
+    /**
+     * Lightweight GitHub App installation status check (DB-only, no GitHub API call).
+     */
+    @GetMapping("/status")
+    public ResponseEntity<?> getInstallationStatus(@RequestHeader("X-USERID") Long userId) {
+        try {
+            GithubAppInstallation installation = githubInstallService.getGithubInstallation(userId);
+            boolean installed = installation != null && installation.getInstallationId() != null;
+            return ResponseEntity.ok(Map.of("isInstalled", installed));
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of("isInstalled", false));
+        }
+    }
 }

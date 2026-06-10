@@ -25,7 +25,7 @@ export default function AuthLayout({
 }) {
   const [theme, setTheme] = React.useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
-      return (localStorage.getItem('talenthium-theme') as 'light' | 'dark') || 'dark';
+      return (localStorage.getItem('theme') as 'light' | 'dark') || 'dark';
     }
     return 'dark';
   });
@@ -38,7 +38,7 @@ export default function AuthLayout({
       document.documentElement.classList.add('light');
       document.documentElement.classList.remove('dark');
     }
-    try { localStorage.setItem('talenthium-theme', theme); } catch {}
+    try { localStorage.setItem('theme', theme); } catch {}
   }, [theme]);
 
   return (

@@ -35,6 +35,11 @@ export const checkProjectCreationCapability = () => {
   return projectApi.get('/api/projects/check-creation-capability');
 };
 
+// Helper: check GitHub App installation status (DB-only, lightweight)
+export const checkGithubInstallationStatus = () => {
+  return projectApi.get('/github/status');
+};
+
 // Request interceptor
 projectApi.interceptors.request.use(
   (config) => {

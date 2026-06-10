@@ -14,4 +14,5 @@ public interface ContributionRepository extends JpaRepository<Contribution, Long
     Optional<Contribution> findByCommitSha(String commitSha);
     boolean existsByCommitSha(String commitSha);
     boolean existsByCommitShaAndBranch(String commitSha, String branch);
+    List<Contribution> findByProject(Project project);
 }

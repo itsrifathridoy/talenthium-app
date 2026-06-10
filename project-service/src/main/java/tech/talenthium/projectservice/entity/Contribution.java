@@ -56,6 +56,30 @@ public class Contribution {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    // AI-generated summary fields (populated by CommitAnalysisService via Groq)
+    @Column(name = "ai_summary", columnDefinition = "TEXT")
+    private String aiSummary;
+
+    @ElementCollection
+    @CollectionTable(name = "contribution_ai_changes", joinColumns = @JoinColumn(name = "contribution_id"))
+    @Column(name = "change_item", columnDefinition = "TEXT")
+    private List<String> aiChanges;
+
+    @Column(name = "ai_impact")
+    private String aiImpact;
+
+    @Column(name = "ai_type")
+    private String aiType;
+
+    @Column(name = "ai_files_changed")
+    private Integer aiFilesChanged;
+
+    @Column(name = "ai_additions")
+    private Integer aiAdditions;
+
+    @Column(name = "ai_deletions")
+    private Integer aiDeletions;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = Instant.now();

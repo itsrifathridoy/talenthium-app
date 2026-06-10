@@ -1,9 +1,11 @@
 package tech.talenthium.projectservice.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tech.talenthium.projectservice.config.RabbitMQConfig;
@@ -32,6 +34,9 @@ public class ProjectService {
     private final UserService userService;
     private final RabbitTemplate rabbitTemplate;
 
+    @Autowired
+    private EntityManager entityManager;
+
     @Transactional
     public Project createNewProject(ProjectCreateRequest body, Long userId) {
         log.info("Creating new project: {}", body.getName());
@@ -55,6 +60,21 @@ public class ProjectService {
         }
 
         return project;
+    }
+
+    /**
+     * Clears existing tech stack for the project and returns repo full name for async re-generation.
+     */
+    @Transactional
+    public String prepareTechStackGeneration(Long projectId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new RuntimeException("Project not found: " + projectId));
+        project.getTechStack().clear();
+        projectRepository.save(project);
+        String url = project.getGitLink().replace(".git", "");
+        String[] parts = url.split("/");
+        if (parts.length < 2) throw new RuntimeException("Invalid GitHub URL: " + project.getGitLink());
+        return parts[parts.length - 2] + "/" + parts[parts.length - 1];
     }
 
     /**
@@ -360,9 +380,18 @@ public class ProjectService {
                             .type(c.getType())
                             .description(c.getCommitMessage())
                             .author(c.getContributor().getName())
+                            .authorAvatar(c.getContributor().getAvatarUrl())
+                            .authorRole(c.getContributor().getRole())
                             .branch(c.getBranch())
                             .commits(1)
                             .hash(c.getCommitSha())
+                            .aiSummary(c.getAiSummary())
+                            .aiChanges(c.getAiChanges())
+                            .aiImpact(c.getAiImpact())
+                            .aiType(c.getAiType())
+                            .aiFilesChanged(c.getAiFilesChanged())
+                            .aiAdditions(c.getAiAdditions())
+                            .aiDeletions(c.getAiDeletions())
                             .build())
                     .collect(Collectors.toList());
 
@@ -387,8 +416,9 @@ public class ProjectService {
             // Dummy tags (will be fetched from project_tags table later)
             List<String> tags = new ArrayList<>(Arrays.asList("Open Source", "Web", "Development"));
 
-            // Dummy tech stack (will be fetched from project_tech_stacks table later)
-            List<String> techStack = new ArrayList<>(Arrays.asList("Next.js", "TypeScript", "Node.js", "PostgreSQL", "TailwindCSS"));
+            List<String> techStack = project.getTechStack().stream()
+                    .map(ProjectTechStack::getTechnology)
+                    .collect(Collectors.toList());
 
             // Determine status based on privacy and other factors
             String status = "Active";
@@ -464,6 +494,30 @@ public class ProjectService {
      * @param gitLink - GitHub repository URL
      * @return Repository full name (owner/repo)
      */
+    @Transactional
+    public void deleteProject(Long projectId, Long userId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new RuntimeException("Project not found: " + projectId));
+
+        if (!project.getOwnerId().equals(userId)) {
+            throw new RuntimeException("Forbidden: you do not own this project");
+        }
+
+        // 1. Delete contributions (and their @ElementCollection tables) explicitly
+        contributionService.deleteAllByProject(project);
+
+        // 2. Flush pending DELETEs to DB and clear session to avoid stale entity state.
+        //    Without this, Hibernate may try to re-delete already-removed contributions
+        //    when cascading from the project, causing FK constraint violations.
+        entityManager.flush();
+        entityManager.clear();
+
+        // 3. Reload project fresh (contributions collection is now empty in DB)
+        //    and delete — cascade handles contributors, deployments, join tables.
+        projectRepository.findById(projectId).ifPresent(projectRepository::delete);
+        log.info("Deleted project {} by user {}", projectId, userId);
+    }
+
     private String extractRepoFullName(String gitLink) {
         // Example: https://github.com/owner/repo.git or https://github.com/owner/repo
         String url = gitLink.replace(".git", "");

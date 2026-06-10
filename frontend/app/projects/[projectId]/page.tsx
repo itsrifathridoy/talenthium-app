@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { DashboardLayout } from "../../../components/layouts/DashboardLayout";
 import { ProjectOverview } from "../../../components/ProjectOverview";
 import { ContributionTimeline } from "../../../components/ContributionTimeline";
@@ -118,8 +118,9 @@ type TabType = "overview" | "contributions" | "contributors" | "code" | "setting
 
 export default function ProjectPage() {
   const params = useParams();
+  const router = useRouter();
   const projectId = params?.projectId as string;
-  
+
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [activeTab, setActiveTab] = useState<TabType>("overview");
   const [selectedFile, setSelectedFile] = useState<string>("src/app.tsx");
@@ -132,6 +133,9 @@ export default function ProjectPage() {
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [diffMeta, setDiffMeta] = useState<{ message: string; author: string; date: string } | null>(null);
+  const [commitSummary, setCommitSummary] = useState<any | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [repoTree, setRepoTree] = useState<any>(null);
   const [repoTreeLoading, setRepoTreeLoading] = useState(false);
@@ -146,62 +150,69 @@ export default function ProjectPage() {
   }, []);
 
   // Fetch project details from API
-  useEffect(() => {
+  const fetchProjectDetails = React.useCallback(async () => {
     if (!projectId) return;
-
-    const fetchProjectDetails = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const response = await projectApi.get(`/api/projects/${projectId}/details`);
-        
-        // Map API response to component-compatible format
-        const apiProject = response.data;
-        const mappedProject = {
-          id: apiProject.id,
-          title: apiProject.title,
-          githubUrl: apiProject.githubUrl,
-          liveUrl: apiProject.liveUrl,
-          status: apiProject.status,
-          privacy: apiProject.privacy,
-          owner: apiProject.owner,
-          tags: apiProject.tags || [],
-          icon: <span className='font-bold text-2xl text-white'>{apiProject.title.charAt(0)}</span>,
-          iconBg: 'bg-gradient-to-br from-blue-500 to-blue-600',
-          shortDescription: apiProject.shortDescription || '',
-          detailedDescription: apiProject.detailedDescription || '',
-          longDescription: apiProject.detailedDescription || '',
-          techStack: apiProject.techStack || [],
-          stats: apiProject.stats,
-          contributors: (apiProject.contributors || []).map((c: any) => ({
-            name: c.name,
-            avatar: c.avatar,
-            contributions: c.contributions,
-            role: c.role,
-            profileLink: c.profileLink,
-          })),
-          contributions: (apiProject.contributions || []).map((c: any) => ({
-            date: c.date,
-            type: c.type,
-            description: c.description,
-            author: c.author,
-            commits: c.commits,
-            hash: c.hash,
-          })),
-        };
-        
-        setProject(mappedProject);
-      } catch (err) {
-        console.error('Failed to fetch project details:', err);
-        setError('Failed to load project details. Using sample data.');
-        setProject(mockProject);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProjectDetails();
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await projectApi.get(`/api/projects/${projectId}/details`);
+      const apiProject = response.data;
+      const mappedProject = {
+        id: apiProject.id,
+        title: apiProject.title,
+        githubUrl: apiProject.githubUrl,
+        liveUrl: apiProject.liveUrl,
+        status: apiProject.status,
+        privacy: apiProject.privacy,
+        owner: apiProject.owner,
+        tags: apiProject.tags || [],
+        icon: <span className='font-bold text-2xl text-white'>{apiProject.title.charAt(0)}</span>,
+        iconBg: 'bg-gradient-to-br from-blue-500 to-blue-600',
+        shortDescription: apiProject.shortDescription || '',
+        detailedDescription: apiProject.detailedDescription || '',
+        longDescription: apiProject.detailedDescription || '',
+        techStack: apiProject.techStack || [],
+        stats: apiProject.stats,
+        contributors: (apiProject.contributors || []).map((c: any) => ({
+          name: c.name,
+          avatar: c.avatar,
+          contributions: c.contributions,
+          role: c.role,
+          profileLink: c.profileLink,
+        })),
+        contributions: (apiProject.contributions || []).map((c: any) => ({
+          id: c.id,
+          date: c.date,
+          type: c.type,
+          description: c.description,
+          author: c.author,
+          authorAvatar: c.authorAvatar,
+          authorRole: c.authorRole,
+          commits: c.commits,
+          hash: c.hash,
+          branch: c.branch,
+          aiSummary: c.aiSummary,
+          aiChanges: c.aiChanges,
+          aiImpact: c.aiImpact,
+          aiType: c.aiType,
+          aiFilesChanged: c.aiFilesChanged,
+          aiAdditions: c.aiAdditions,
+          aiDeletions: c.aiDeletions,
+        })),
+      };
+      setProject(mappedProject);
+    } catch (err) {
+      console.error('Failed to fetch project details:', err);
+      setError('Failed to load project details. Using sample data.');
+      setProject(mockProject);
+    } finally {
+      setLoading(false);
+    }
   }, [projectId]);
+
+  useEffect(() => {
+    fetchProjectDetails();
+  }, [fetchProjectDetails]);
 
   // Fetch repository tree when Code tab is active
   useEffect(() => {
@@ -297,6 +308,21 @@ export default function ProjectPage() {
     }
   };
 
+  const handleAnalyzeCommit = async (contribution: any) => {
+    if (!projectId || !contribution?.hash) return;
+    setSummaryLoading(true);
+    setSummaryError(null);
+    setCommitSummary(null);
+    try {
+      const resp = await projectApi.get(`/api/projects/${projectId}/commits/${contribution.hash}/summary`);
+      setCommitSummary(resp.data);
+    } catch (err: any) {
+      setSummaryError("AI analysis failed. Check Groq API key or try again.");
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
   const handleContributionSelect = async (contribution: any | null) => {
     if (!contribution) {
       setSelectedContribution(null);
@@ -305,6 +331,8 @@ export default function ProjectPage() {
       setDiffMeta(null);
       setDiffError(null);
       setDiffLoading(false);
+      setCommitSummary(null);
+      setSummaryError(null);
       return;
     }
 
@@ -693,7 +721,7 @@ export default function ProjectPage() {
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-            {activeTab === "overview" && <OverviewTab theme={theme} project={project} />}
+            {activeTab === "overview" && <OverviewTab theme={theme} project={project} projectId={projectId} onRefresh={fetchProjectDetails} />}
             {activeTab === "contributions" && (
               <ContributionsTab
                 theme={theme}
@@ -710,6 +738,10 @@ export default function ProjectPage() {
                 patchToDiffTexts={patchToDiffTexts}
                 isFullscreen={isFullscreen}
                 setIsFullscreen={setIsFullscreen}
+                commitSummary={commitSummary}
+                summaryLoading={summaryLoading}
+                summaryError={summaryError}
+                onAnalyzeCommit={handleAnalyzeCommit}
               />
             )}
             {activeTab === "contributors" && <ContributorsTab theme={theme} contributors={project.contributors} />}
@@ -726,7 +758,7 @@ export default function ProjectPage() {
                 onRefreshTree={fetchRepositoryTree}
               />
             )}
-            {activeTab === "settings" && <SettingsTab theme={theme} project={project} />}
+            {activeTab === "settings" && <SettingsTab theme={theme} project={project} projectId={projectId} onDeleted={() => router.push("/projects")} />}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -880,14 +912,14 @@ function ContributionFileTree({
   return <>{fileTree.length === 0 ? null : renderTree(fileTree)}</>;
 }
 
-function OverviewTab({ theme, project }: { theme: "light" | "dark"; project: any }) {
+function OverviewTab({ theme, project, projectId, onRefresh }: { theme: "light" | "dark"; project: any; projectId: string; onRefresh: () => void }) {
   return (
     <div className="space-y-6">
       {/* Original Overview Section */}
-      <ProjectOverview project={project} theme={theme} />
-      
+      <ProjectOverview project={project} theme={theme} projectId={projectId} onRefresh={onRefresh} />
+
       {/* Contribution Timeline */}
-      <ContributionTimeline theme={theme} />
+      <ContributionTimeline theme={theme} contributions={project.contributions || []} />
       
       {/* Deployment Section */}
       <DeploymentSection theme={theme} />
@@ -914,6 +946,10 @@ function ContributionsTab({
   patchToDiffTexts,
   isFullscreen,
   setIsFullscreen,
+  commitSummary,
+  summaryLoading,
+  summaryError,
+  onAnalyzeCommit,
 }: {
   theme: "light" | "dark";
   contributions: any[];
@@ -929,6 +965,10 @@ function ContributionsTab({
   patchToDiffTexts: (patch: string) => { original: string; modified: string };
   isFullscreen: boolean;
   setIsFullscreen: (value: boolean) => void;
+  commitSummary: any | null;
+  summaryLoading: boolean;
+  summaryError: string | null;
+  onAnalyzeCommit: (contribution: any) => void;
 }) {
   const typeColors: Record<string, { dark: string; light: string }> = {
     Feature: { dark: 'bg-blue-500/20 text-blue-400', light: 'bg-blue-100 text-blue-700' },
@@ -1255,6 +1295,96 @@ function ContributionsTab({
             </div>
           </div>
 
+          {/* AI Summary Panel */}
+          <div className={`rounded-2xl border p-5 ${theme === 'dark' ? 'bg-[#0b1a14] border-[#13ff8c]/20' : 'bg-emerald-50 border-emerald-200'}`}>
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className={`text-base font-bold ${theme === 'dark' ? 'text-[#13ff8c]' : 'text-emerald-700'}`}>
+                  AI Code Analysis
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-[#13ff8c]/10 text-[#13ff8c]' : 'bg-emerald-100 text-emerald-600'}`}>
+                  Groq · llama-3.3-70b
+                </span>
+              </div>
+              {!commitSummary && !summaryLoading && (
+                <button
+                  type="button"
+                  onClick={() => onAnalyzeCommit(selectedContribution)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                    theme === 'dark'
+                      ? 'bg-[#13ff8c] text-black hover:bg-[#19fb9b]'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  }`}
+                >
+                  Analyze Changes
+                </button>
+              )}
+              {commitSummary && !summaryLoading && (
+                <button
+                  type="button"
+                  onClick={() => onAnalyzeCommit(selectedContribution)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${
+                    theme === 'dark'
+                      ? 'border-[#13ff8c]/30 text-[#13ff8c] hover:bg-[#13ff8c]/10'
+                      : 'border-emerald-300 text-emerald-600 hover:bg-emerald-100'
+                  }`}
+                >
+                  Re-analyze
+                </button>
+              )}
+            </div>
+
+            {summaryLoading && (
+              <div className={`flex items-center gap-3 mt-4 text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
+                <FaSpinner className="animate-spin" />
+                Analyzing code diff with AI…
+              </div>
+            )}
+
+            {summaryError && !summaryLoading && (
+              <p className={`mt-3 text-sm ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>{summaryError}</p>
+            )}
+
+            {commitSummary && !summaryLoading && (
+              <div className="mt-4 flex flex-col gap-4">
+                {/* Stats row */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  {[
+                    { label: commitSummary.type, color: theme === 'dark' ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-100 text-blue-700' },
+                    { label: `Impact: ${commitSummary.impact}`, color: commitSummary.impact === 'High'
+                      ? (theme === 'dark' ? 'bg-red-500/20 text-red-300' : 'bg-red-100 text-red-700')
+                      : commitSummary.impact === 'Medium'
+                        ? (theme === 'dark' ? 'bg-yellow-500/20 text-yellow-300' : 'bg-yellow-100 text-yellow-700')
+                        : (theme === 'dark' ? 'bg-gray-500/20 text-gray-300' : 'bg-gray-100 text-gray-700')
+                    },
+                    { label: `${commitSummary.filesChanged} files`, color: theme === 'dark' ? 'bg-white/10 text-gray-200' : 'bg-gray-100 text-gray-700' },
+                    { label: `+${commitSummary.totalAdditions}`, color: theme === 'dark' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-100 text-emerald-700' },
+                    { label: `-${commitSummary.totalDeletions}`, color: theme === 'dark' ? 'bg-red-500/20 text-red-300' : 'bg-red-100 text-red-700' },
+                  ].map(({ label, color }) => (
+                    <span key={label} className={`text-xs font-semibold px-2.5 py-1 rounded-full ${color}`}>{label}</span>
+                  ))}
+                </div>
+
+                {/* Summary */}
+                <p className={`text-sm leading-relaxed ${theme === 'dark' ? 'text-gray-200' : 'text-gray-800'}`}>
+                  {commitSummary.summary}
+                </p>
+
+                {/* Changes */}
+                {commitSummary.changes?.length > 0 && (
+                  <ul className="flex flex-col gap-1.5">
+                    {commitSummary.changes.map((change: string, i: number) => (
+                      <li key={i} className={`flex items-start gap-2 text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                        <span className={`mt-0.5 flex-shrink-0 ${theme === 'dark' ? 'text-[#13ff8c]' : 'text-emerald-600'}`}>▸</span>
+                        {change}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className={`rounded-2xl border ${theme === 'dark' ? 'bg-[#0b1511] border-white/10' : 'bg-gray-50 border-gray-200'}`}>
             {diffLoading ? (
               <div className="flex items-center justify-center h-64">
@@ -1551,7 +1681,7 @@ function CodeTab({
               No files found
             </p>
             <p className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
-              {project?.githubUrl ? 'Check console for errors' : 'No repository URL'}
+              {repoTree ? 'Check console for errors' : 'No repository connected'}
             </p>
           </div>
         )}
@@ -1596,7 +1726,24 @@ function CodeTab({
 }
 
 // Settings Tab Component
-function SettingsTab({ theme, project }: { theme: "light" | "dark"; project: any }) {
+function SettingsTab({ theme, project, projectId, onDeleted }: { theme: "light" | "dark"; project: any; projectId: string; onDeleted: () => void }) {
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await projectApi.delete(`/api/projects/${projectId}`);
+      onDeleted();
+    } catch (err: any) {
+      setDeleteError(err.response?.data?.message || "Failed to delete project");
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <GlassCard theme={theme} className={`${theme === 'dark' ? 'bg-white/5 border-white/10' : 'bg-white/90 border-gray-200'} border rounded-2xl p-8`}>
@@ -1687,16 +1834,46 @@ function SettingsTab({ theme, project }: { theme: "light" | "dark"; project: any
         <p className={`mb-6 ${theme === 'dark' ? 'text-red-300' : 'text-red-600'}`}>
           Once you delete a project, there is no going back. Please be certain.
         </p>
-        <button
-          className={`px-6 py-3 rounded-lg font-medium transition-colors ${
-            theme === 'dark'
-              ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-              : 'bg-red-100 text-red-700 hover:bg-red-200'
-          }`}
-        >
-          Delete Project
-        </button>
+        {deleteError && (
+          <p className="mb-4 text-sm text-red-500">{deleteError}</p>
+        )}
+        {!confirmDelete ? (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+              theme === 'dark'
+                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                : 'bg-red-100 text-red-700 hover:bg-red-200'
+            }`}
+          >
+            Delete Project
+          </button>
+        ) : (
+          <div className="flex items-center gap-4">
+            <p className={`text-sm font-medium ${theme === 'dark' ? 'text-red-300' : 'text-red-700'}`}>
+              Are you sure? This cannot be undone.
+            </p>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="px-6 py-3 rounded-lg font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+            >
+              {deleting ? "Deleting..." : "Yes, Delete"}
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+              className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+                theme === 'dark'
+                  ? 'bg-white/5 text-white hover:bg-white/10'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </GlassCard>
     </div>
   );
-} 
+}

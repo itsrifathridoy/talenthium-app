@@ -5,21 +5,16 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import tech.talenthium.auth.AuthServiceProto;
 import tech.talenthium.jobservices.annotation.RequireRole;
-import tech.talenthium.jobservices.dto.DeveloperDto;
 import tech.talenthium.jobservices.dto.InterviewRoundResponse;
 import tech.talenthium.jobservices.dto.JobApplicationResponse;
 import tech.talenthium.jobservices.dto.SendNextRound;
-import tech.talenthium.jobservices.entity.Job;
 //import tech.talenthium.jobservices.grpc.AuthServiceGrpcClient;
 import tech.talenthium.jobservices.dto.*;
 //import tech.talenthium.jobservices.entity.Job;
 import tech.talenthium.jobservices.service.JobApplicationService;
 import tech.talenthium.jobservices.service.JobService;
 
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 
 @RestController

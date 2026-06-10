@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
 import * as Select from '@radix-ui/react-select';
 import Link from "next/link";
-import { getAllProjects, getMyProjects, checkProjectCreationCapability } from "../../lib/project-service";
+import { getAllProjects, getMyProjects, checkGithubInstallationStatus } from "../../lib/project-service";
 import { useAuth } from "@/lib/auth-context";
 
 interface Project {
@@ -155,26 +155,26 @@ export default function ProjectsPage() {
     const [capabilityLoading, setCapabilityLoading] = useState(true);
     const [hasGithubAccess, setHasGithubAccess] = useState(false);
 
-    // Check capability first
+    // Check GitHub App installation status
     useEffect(() => {
-        const checkCapability = async () => {
+        const checkGithub = async () => {
             if (!user?.userID) {
                 setCapabilityLoading(false);
                 return;
             }
 
             try {
-                const response = await checkProjectCreationCapability();
-                setHasGithubAccess(response.data.canCreateProject);
+                const response = await checkGithubInstallationStatus();
+                setHasGithubAccess(response.data.isInstalled === true);
             } catch (err: any) {
-                console.error('Failed to check capability:', err);
+                console.error('Failed to check GitHub status:', err);
                 setHasGithubAccess(false);
             } finally {
                 setCapabilityLoading(false);
             }
         };
 
-        checkCapability();
+        checkGithub();
     }, [user?.userID]);
 
     // Fetch projects on mount and when tab changes

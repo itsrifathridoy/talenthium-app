@@ -10,8 +10,7 @@ interface AuthWrapperProps {
 }
 
 const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
-  const { isAuthenticated, isInitialized, user } = useAuth();
-  console.log(user);
+  const { isAuthenticated, isInitialized } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -59,9 +58,9 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
   // While initializing auth, render a lightweight loader to avoid showing login first
   if (!isInitialized) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-navy-900">
+      <div className="min-h-screen flex items-center justify-center bg-emerald-50 dark:bg-[#0a1813]">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-t-blue-500 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-16 h-16 border-4 border-t-emerald-500 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600 dark:text-gray-300">Loading...</p>
         </div>
       </div>
@@ -71,10 +70,10 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
   // If not on auth route and not authenticated, show loading/redirect message
   if (isProtectedRoute && !isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-navy-900">
+      <div className="min-h-screen flex items-center justify-center bg-emerald-50 dark:bg-[#0a1813]">
         <div className="text-center">
           <div className="flex justify-center mb-4">
-            <MdLockOutline className="text-blue-500" size={48} />
+            <MdLockOutline className="text-emerald-500" size={48} />
           </div>
           <h1 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">Authentication Required</h1>
           <p className="text-gray-600 dark:text-gray-300">Redirecting to login...</p>
@@ -86,9 +85,9 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
   // If on auth route and authenticated, show loading while redirecting
   if (isAuthRoute && isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-navy-900">
+      <div className="min-h-screen flex items-center justify-center bg-emerald-50 dark:bg-[#0a1813]">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-t-blue-500 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-16 h-16 border-4 border-t-emerald-500 border-r-transparent border-b-transparent border-l-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600 dark:text-gray-300">Redirecting to dashboard...</p>
         </div>
       </div>

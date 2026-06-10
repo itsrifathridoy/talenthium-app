@@ -9,9 +9,11 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import tech.talenthium.projectservice.dto.request.ProjectCreateRequest;
+import tech.talenthium.projectservice.dto.response.CommitSummaryResponse;
 import tech.talenthium.projectservice.dto.response.FileContentResponse;
 import tech.talenthium.projectservice.dto.response.ProjectDetailResponse;
 import tech.talenthium.projectservice.entity.Project;
+import tech.talenthium.projectservice.service.CommitAnalysisService;
 import tech.talenthium.projectservice.service.ProjectService;
 import tech.talenthium.projectservice.util.GitHubTreeFormatter;
 
@@ -25,6 +27,7 @@ import java.util.Map;
 public class ProjectController {
     private final ProjectService projectService;
     private final GitHubTreeFormatter treeFormatter;
+    private final CommitAnalysisService commitAnalysisService;
 
     @PostMapping("/create")
     public ResponseEntity<?> createProject(@Valid @RequestBody ProjectCreateRequest request, @RequestHeader("X-USERID") Long userId) {
@@ -335,13 +338,53 @@ public class ProjectController {
      * @param projectId - Project ID
      * @param commitHash - Commit SHA/hash
      * @return JsonNode with commit details and file diffs
-     * <p>
-     * Example: GET /api/projects/1/commits/abc123def/diff
-     * Response includes:
-     * - commit metadata (author, date, message)
-     * - files changed with additions/deletions
-     * - patch/diff content for each file
      */
+    /**
+     * Analyze commit code changes using Groq AI and return a structured summary.
+     * Reads the actual diff — not just the commit message.
+     *
+     * Example: GET /api/projects/1/commits/abc123def/summary
+     */
+    @GetMapping("/{projectId}/commits/{commitHash}/summary")
+    public ResponseEntity<CommitSummaryResponse> getCommitSummary(
+            @RequestHeader("X-USERID") Long userId,
+            @PathVariable Long projectId,
+            @PathVariable String commitHash) throws Exception {
+
+        log.info("Analyzing commit {} for project {} by user {}", commitHash, projectId, userId);
+        CommitSummaryResponse summary = commitAnalysisService.analyzeCommit(userId, projectId, commitHash);
+        return ResponseEntity.ok(summary);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteProject(
+            @PathVariable Long id,
+            @RequestHeader("X-USERID") Long userId) {
+        log.info("Deleting project {} by user {}", id, userId);
+        try {
+            projectService.deleteProject(id, userId);
+            return ResponseEntity.ok(Map.of("message", "Project deleted successfully"));
+        } catch (RuntimeException e) {
+            if (e.getMessage().startsWith("Forbidden")) {
+                return ResponseEntity.status(403).body(Map.of("message", e.getMessage()));
+            }
+            if (e.getMessage().startsWith("Project not found")) {
+                return ResponseEntity.status(404).body(Map.of("message", e.getMessage()));
+            }
+            throw e;
+        }
+    }
+
+    @PostMapping("/{projectId}/generate-tech-stack")
+    public ResponseEntity<?> generateTechStack(
+            @PathVariable Long projectId,
+            @RequestHeader("X-USERID") Long userId) {
+        log.info("Triggering tech stack generation for project {} by user {}", projectId, userId);
+        String repoFullName = projectService.prepareTechStackGeneration(projectId);
+        commitAnalysisService.generateAndStoreTechStackAsync(projectId, userId, repoFullName);
+        return ResponseEntity.ok(Map.of("message", "Tech stack generation started"));
+    }
+
     @GetMapping("/{projectId}/commits/{commitHash}/diff")
     public ResponseEntity<JsonNode> getCommitDiff(
             @RequestHeader("X-USERID") Long userId,

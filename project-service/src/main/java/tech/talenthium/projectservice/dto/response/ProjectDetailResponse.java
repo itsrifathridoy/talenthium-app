@@ -77,9 +77,18 @@ public class ProjectDetailResponse {
         private String type;
         private String description;
         private String author;
+        private String authorAvatar;
+        private String authorRole;
         private Integer commits;
         private String branch;
         private String hash;
+        private String aiSummary;
+        private java.util.List<String> aiChanges;
+        private String aiImpact;
+        private String aiType;
+        private Integer aiFilesChanged;
+        private Integer aiAdditions;
+        private Integer aiDeletions;
     }
     
     @Data

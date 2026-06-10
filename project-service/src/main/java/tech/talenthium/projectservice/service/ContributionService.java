@@ -133,4 +133,13 @@ public class ContributionService {
         return (int) contributionRepository.findByProjectOrderByCommittedDateDesc(project).stream()
                 .count();
     }
+
+    @Transactional
+    public void deleteAllByProject(Project project) {
+        List<Contribution> contributions = contributionRepository.findByProject(project);
+        if (!contributions.isEmpty()) {
+            contributionRepository.deleteAll(contributions);
+            log.info("Deleted {} contributions for project {}", contributions.size(), project.getId());
+        }
+    }
 }
