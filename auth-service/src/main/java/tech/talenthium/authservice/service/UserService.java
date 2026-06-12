@@ -40,6 +40,14 @@ public class UserService {
         return userRepository.findByUserIDAndRole(userID, role);
     }
 
+    public void updateGithubUsername(Long userId, String githubUsername) {
+        userRepository.findById(userId).ifPresent(user -> {
+            user.setGithubUsername(githubUsername);
+            userRepository.save(user);
+            log.info("Updated githubUsername={} for user {}", githubUsername, userId);
+        });
+    }
+
     public User registerOAuthUser(OAuth2User oAuth2User) {
         log.info("oauthUser: {}",oAuth2User);
         log.info("username:{}, name:{}, avatar: {}, email: {} ",oAuth2User.getName(),oAuth2User.getAttribute("name"),oAuth2User.getAttribute("picture"),oAuth2User.getAttribute("email"));

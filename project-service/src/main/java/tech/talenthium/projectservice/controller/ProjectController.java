@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import tech.talenthium.projectservice.dto.request.CommitRequest;
 import tech.talenthium.projectservice.dto.request.ProjectCreateRequest;
 import tech.talenthium.projectservice.dto.response.CommitSummaryResponse;
 import tech.talenthium.projectservice.dto.response.FileContentResponse;
@@ -292,6 +293,41 @@ public class ProjectController {
     }
 
     /**
+     * Commit and push files to a GitHub repository.
+     * Uses the Git Data API for an atomic multi-file commit.
+     *
+     * Example: POST /api/projects/github/commit/owner/repo
+     */
+    @PostMapping("/github/commit/{repoOwner}/{repoName}")
+    public ResponseEntity<?> commitAndPush(
+            @RequestHeader("X-USERID") Long userId,
+            @PathVariable String repoOwner,
+            @PathVariable String repoName,
+            @RequestBody CommitRequest request) {
+
+        log.info("Commit & push {}/{} ({} files) by user {}", repoOwner, repoName,
+                request.getFiles() != null ? request.getFiles().size() : 0, userId);
+
+        if (request.getFiles() == null || request.getFiles().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "No files to commit"));
+        }
+        if (request.getCommitMessage() == null || request.getCommitMessage().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "commitMessage is required"));
+        }
+
+        try {
+            Map<String, Object> result = projectService.commitAndPush(
+                    userId, repoOwner, repoName,
+                    request.getCommitMessage(), request.getBranch(),
+                    request.getFiles(), request.getAuthorName(), request.getAuthorEmail());
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Commit failed for {}/{}: {}", repoOwner, repoName, e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("message", "Commit failed: " + e.getMessage()));
+        }
+    }
+
+    /**
      * Extract base URL from HTTP request
      * Format: scheme://host:port (without context path)
      */
@@ -372,6 +408,81 @@ public class ProjectController {
                 return ResponseEntity.status(404).body(Map.of("message", e.getMessage()));
             }
             throw e;
+        }
+    }
+
+    @GetMapping("/users/search")
+    public ResponseEntity<?> searchGithubUsers(@RequestParam String query) {
+        if (query == null || query.trim().length() < 2) {
+            return ResponseEntity.ok(List.of());
+        }
+        return ResponseEntity.ok(projectService.searchGithubUsers(query.trim()));
+    }
+
+    @PostMapping("/{projectId}/contributors")
+    public ResponseEntity<?> addContributor(
+            @PathVariable Long projectId,
+            @RequestHeader("X-USERID") Long userId,
+            @RequestBody Map<String, String> body) {
+        String githubUsername = body.get("githubUsername");
+        if (githubUsername == null || githubUsername.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "githubUsername is required"));
+        }
+        try {
+            projectService.addContributor(projectId, githubUsername, userId);
+            return ResponseEntity.ok(Map.of("message", "Contributor added successfully"));
+        } catch (RuntimeException e) {
+            if (e.getMessage().startsWith("Forbidden")) {
+                return ResponseEntity.status(403).body(Map.of("message", e.getMessage()));
+            }
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/contributed")
+    public ResponseEntity<List<Project>> getContributedProjects(@RequestHeader("X-USERID") Long userId) {
+        return ResponseEntity.ok(projectService.getContributedProjects(userId));
+    }
+
+    @PatchMapping("/{projectId}/contributors/{contributorId}/access")
+    public ResponseEntity<?> removeContributorAccess(
+            @PathVariable Long projectId,
+            @PathVariable Long contributorId,
+            @RequestHeader("X-USERID") Long userId) {
+        try {
+            projectService.removeContributorAccess(projectId, contributorId, userId);
+            return ResponseEntity.ok(Map.of("message", "Contributor access removed"));
+        } catch (RuntimeException e) {
+            if (e.getMessage().startsWith("Forbidden")) return ResponseEntity.status(403).body(Map.of("message", e.getMessage()));
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/{projectId}/contributors/{contributorId}")
+    public ResponseEntity<?> deleteContributor(
+            @PathVariable Long projectId,
+            @PathVariable Long contributorId,
+            @RequestHeader("X-USERID") Long userId) {
+        try {
+            projectService.deleteContributor(projectId, contributorId, userId);
+            return ResponseEntity.ok(Map.of("message", "Contributor deleted"));
+        } catch (RuntimeException e) {
+            if (e.getMessage().startsWith("Forbidden")) return ResponseEntity.status(403).body(Map.of("message", e.getMessage()));
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{projectId}/sync-contributions")
+    public ResponseEntity<?> syncContributions(
+            @PathVariable Long projectId,
+            @RequestHeader("X-USERID") Long userId) {
+        log.info("Manual contribution sync requested for project {} by user {}", projectId, userId);
+        try {
+            projectService.syncContributions(projectId, userId);
+            return ResponseEntity.ok(Map.of("message", "Contributions synced successfully"));
+        } catch (Exception e) {
+            log.error("Failed to sync contributions for project {}: {}", projectId, e.getMessage());
+            return ResponseEntity.internalServerError().body(Map.of("message", "Sync failed: " + e.getMessage()));
         }
     }
 

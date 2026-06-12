@@ -14,7 +14,10 @@ import tech.talenthium.projectservice.dto.response.FileContentResponse;
 import tech.talenthium.projectservice.dto.response.ProjectDetailResponse;
 import tech.talenthium.projectservice.entity.*;
 import tech.talenthium.projectservice.event.CommitFetchEvent;
+import tech.talenthium.projectservice.repository.ContributionRepository;
+import tech.talenthium.projectservice.repository.ContributorRepository;
 import tech.talenthium.projectservice.repository.ProjectRepository;
+import tech.talenthium.projectservice.repository.UserRepository;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -31,8 +34,12 @@ public class ProjectService {
     private final GithubInstallService githubInstallService;
     private final GitHubAppAuthService gitHubAppAuthService;
     private final ContributionService contributionService;
+    private final ContributionRepository contributionRepository;
+    private final ContributorRepository contributorRepository;
     private final UserService userService;
+    private final UserRepository userRepository;
     private final RabbitTemplate rabbitTemplate;
+    private final DokployService dokployService;
 
     @Autowired
     private EntityManager entityManager;
@@ -98,6 +105,143 @@ public class ProjectService {
         return projectRepository.findByOwnerId(ownerId);
     }
 
+    public List<Map<String, Object>> searchGithubUsers(String query) {
+        return userRepository.searchUsersWithGithub(query).stream()
+                .map(u -> {
+                    Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("userId", u.getUserId());
+                    m.put("name", u.getName());
+                    m.put("username", u.getUsername());
+                    m.put("githubUsername", u.getGithubUsername());
+                    m.put("avatarUrl", "https://github.com/" + u.getGithubUsername() + ".png");
+                    return m;
+                })
+                .toList();
+    }
+
+    @Transactional
+    public void addContributor(Long projectId, String githubUsername, Long requesterId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new RuntimeException("Project not found: " + projectId));
+
+        if (!project.getOwnerId().equals(requesterId)) {
+            throw new RuntimeException("Forbidden: only the project owner can add contributors");
+        }
+
+        boolean alreadyExists = contributorRepository
+                .findByProjectAndGithubUsername(project, githubUsername).isPresent();
+        if (alreadyExists) {
+            throw new RuntimeException("User is already a contributor");
+        }
+
+        User user = userRepository.findByGithubUsername(githubUsername)
+                .orElseThrow(() -> new RuntimeException("No user found with GitHub username: " + githubUsername));
+
+        contributorRepository.save(Contributor.builder()
+                .project(project)
+                .name(user.getName())
+                .githubUsername(user.getGithubUsername())
+                .email(user.getEmail())
+                .avatarUrl("https://github.com/" + user.getGithubUsername() + ".png")
+                .role("Contributor")
+                .build());
+
+        log.info("Added contributor {} to project {}", githubUsername, projectId);
+
+        // Invite as GitHub repository collaborator (best-effort — doesn't roll back the DB save on failure)
+        try {
+            GithubAppInstallation installation = githubInstallService.getGithubInstallation(requesterId);
+            long installationId = Long.parseLong(installation.getInstallationId());
+            String appJwt = gitHubAppAuthService.generateAppJWT();
+            String installationToken = gitHubService.createInstallationToken(installationId, appJwt);
+            String repoFullName = extractRepoFullName(project.getGitLink());
+            gitHubService.addRepositoryCollaborator(repoFullName, githubUsername, "push", installationToken);
+        } catch (Exception e) {
+            log.warn("GitHub collaborator invite failed for {} on project {}: {}", githubUsername, projectId, e.getMessage());
+        }
+    }
+
+    @Transactional
+    public void removeContributorAccess(Long projectId, Long contributorId, Long requesterId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new RuntimeException("Project not found: " + projectId));
+        if (!project.getOwnerId().equals(requesterId)) {
+            throw new RuntimeException("Forbidden: only the project owner can manage contributors");
+        }
+        Contributor contributor = contributorRepository.findById(contributorId)
+                .orElseThrow(() -> new RuntimeException("Contributor not found: " + contributorId));
+        contributor.setActive(false);
+        contributorRepository.save(contributor);
+        log.info("Removed access for contributor {} on project {}", contributorId, projectId);
+
+        // Remove from GitHub repository collaborators
+        try {
+            GithubAppInstallation installation = githubInstallService.getGithubInstallation(requesterId);
+            long installationId = Long.parseLong(installation.getInstallationId());
+            String appJwt = gitHubAppAuthService.generateAppJWT();
+            String installationToken = gitHubService.createInstallationToken(installationId, appJwt);
+            String repoFullName = extractRepoFullName(project.getGitLink());
+            gitHubService.removeRepositoryCollaborator(repoFullName, contributor.getGithubUsername(), installationToken);
+        } catch (Exception e) {
+            log.warn("GitHub collaborator removal failed for contributor {} on project {}: {}", contributorId, projectId, e.getMessage());
+        }
+    }
+
+    @Transactional
+    public void deleteContributor(Long projectId, Long contributorId, Long requesterId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new RuntimeException("Project not found: " + projectId));
+        if (!project.getOwnerId().equals(requesterId)) {
+            throw new RuntimeException("Forbidden: only the project owner can manage contributors");
+        }
+        Contributor contributor = contributorRepository.findById(contributorId)
+                .orElseThrow(() -> new RuntimeException("Contributor not found: " + contributorId));
+        long count = contributionRepository.countByContributor(contributor);
+        if (count > 0) {
+            throw new RuntimeException("Cannot delete contributor with " + count + " existing contribution(s)");
+        }
+        String githubUsername = contributor.getGithubUsername();
+        contributorRepository.delete(contributor);
+        log.info("Deleted contributor {} from project {}", contributorId, projectId);
+
+        // Remove from GitHub repository collaborators
+        try {
+            GithubAppInstallation installation = githubInstallService.getGithubInstallation(requesterId);
+            long installationId = Long.parseLong(installation.getInstallationId());
+            String appJwt = gitHubAppAuthService.generateAppJWT();
+            String installationToken = gitHubService.createInstallationToken(installationId, appJwt);
+            String repoFullName = extractRepoFullName(project.getGitLink());
+            gitHubService.removeRepositoryCollaborator(repoFullName, githubUsername, installationToken);
+        } catch (Exception e) {
+            log.warn("GitHub collaborator removal failed for contributor {} on project {}: {}", contributorId, projectId, e.getMessage());
+        }
+    }
+
+    public List<Project> getContributedProjects(Long userId) {
+        User user = userRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("User not found: " + userId));
+        if (user.getGithubUsername() == null) return List.of();
+        return contributorRepository.findByGithubUsername(user.getGithubUsername())
+                .stream()
+                .map(Contributor::getProject)
+                .filter(p -> !p.getOwnerId().equals(userId))
+                .distinct()
+                .toList();
+    }
+
+    public void syncContributions(Long projectId, Long userId) throws Exception {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new RuntimeException("Project not found: " + projectId));
+
+        GithubAppInstallation installation = githubInstallService.getGithubInstallation(userId);
+        long installationId = Long.parseLong(installation.getInstallationId());
+        String appJwt = gitHubAppAuthService.generateAppJWT();
+        String installationToken = gitHubService.createInstallationToken(installationId, appJwt);
+
+        log.info("Manual contribution sync triggered for project {} by user {}", projectId, userId);
+        contributionService.fetchAndStoreCommits(project, installationToken, project.getDefaultBranch());
+    }
+
     /**
      * Fetches file content from a GitHub repository for a specific user.
      *
@@ -108,13 +252,7 @@ public class ProjectService {
      */
     public FileContentResponse getRepositoryFileContent(Long userId, String repoFullName, String filePath) {
         try {
-            // Get the GitHub installation for the user
-            GithubAppInstallation installation = githubInstallService.getGithubInstallation(userId);
-
-            // Create installation token
-            long installationId = Long.parseLong(installation.getInstallationId());
-            String appJwt = gitHubAppAuthService.generateAppJWT();
-            String installationToken = gitHubService.createInstallationToken(installationId, appJwt);
+            String installationToken = resolveInstallationToken(repoFullName.split("/")[0], userId);
 
             // Fetch the file content
             FileContentResponse fileContent = gitHubService.getFileContent(repoFullName, filePath, installationToken);
@@ -166,13 +304,7 @@ public class ProjectService {
      */
     public boolean checkRepositoryAccess(Long userId, String repoFullName) {
         try {
-            // Get the GitHub installation for the user
-            GithubAppInstallation installation = githubInstallService.getGithubInstallation(userId);
-
-            // Create installation token
-            long installationId = Long.parseLong(installation.getInstallationId());
-            String appJwt = gitHubAppAuthService.generateAppJWT();
-            String installationToken = gitHubService.createInstallationToken(installationId, appJwt);
+            String installationToken = resolveInstallationToken(repoFullName.split("/")[0], userId);
 
             // Check access
             boolean canAccess = gitHubService.canAccessRepository(repoFullName, installationToken);
@@ -195,13 +327,7 @@ public class ProjectService {
      */
     public JsonNode getDirectoryContents(Long userId, String repoFullName, String path) {
         try {
-            // Get the GitHub installation for the user
-            GithubAppInstallation installation = githubInstallService.getGithubInstallation(userId);
-
-            // Create installation token
-            long installationId = Long.parseLong(installation.getInstallationId());
-            String appJwt = gitHubAppAuthService.generateAppJWT();
-            String installationToken = gitHubService.createInstallationToken(installationId, appJwt);
+            String installationToken = resolveInstallationToken(repoFullName.split("/")[0], userId);
 
             // Get directory contents
             JsonNode contents = gitHubService.getDirectoryContents(repoFullName, path, installationToken);
@@ -224,13 +350,7 @@ public class ProjectService {
      */
     public JsonNode getRepositoryTree(Long userId, String repoFullName, String branch) {
         try {
-            // Get the GitHub installation for the user
-            GithubAppInstallation installation = githubInstallService.getGithubInstallation(userId);
-
-            // Create installation token
-            long installationId = Long.parseLong(installation.getInstallationId());
-            String appJwt = gitHubAppAuthService.generateAppJWT();
-            String installationToken = gitHubService.createInstallationToken(installationId, appJwt);
+            String installationToken = resolveInstallationToken(repoFullName.split("/")[0], userId);
 
             // Get repository tree
             JsonNode tree = gitHubService.getRepositoryTree(repoFullName, branch, installationToken);
@@ -254,13 +374,7 @@ public class ProjectService {
      */
     public FileContentResponse getBlobContent(Long userId, String repoFullName, String sha) {
         try {
-            // Get the GitHub installation for the user
-            GithubAppInstallation installation = githubInstallService.getGithubInstallation(userId);
-
-            // Create installation token
-            long installationId = Long.parseLong(installation.getInstallationId());
-            String appJwt = gitHubAppAuthService.generateAppJWT();
-            String installationToken = gitHubService.createInstallationToken(installationId, appJwt);
+            String installationToken = resolveInstallationToken(repoFullName.split("/")[0], userId);
 
             // Fetch the blob content
             FileContentResponse blobContent = gitHubService.getBlobContent(repoFullName, sha, installationToken);
@@ -403,6 +517,11 @@ public class ProjectService {
                             .log(d.getLog())
                             .startedAt(d.getStartedAt() != null ? d.getStartedAt().toString() : null)
                             .completedAt(d.getCompletedAt() != null ? d.getCompletedAt().toString() : null)
+                            .branch(d.getBranch())
+                            .commitHash(d.getCommitHash())
+                            .title(d.getTitle())
+                            .dokployDeploymentId(d.getDokployDeploymentId())
+                            .dokployApplicationId(d.getDokployApplicationId())
                             .build())
                     .collect(Collectors.toList());
 
@@ -428,6 +547,7 @@ public class ProjectService {
 
             return ProjectDetailResponse.builder()
                     .id(project.getId())
+                    .ownerId(project.getOwnerId())
                     .title(project.getName())
                     .tagline(project.getTagline())
                     .shortDescription(project.getShortDescription())
@@ -443,6 +563,9 @@ public class ProjectService {
                     .contributors(contributorsList)
                     .contributions(contributionsList)
                     .deployments(deploymentsList)
+                    .webhookUrl(project.getDokployRefreshToken() != null
+                            ? dokployService.buildWebhookUrl(project.getDokployRefreshToken()) : null)
+                    .deployPublicKey(project.getDokployPublicKey())
                     .build();
         } catch (RuntimeException e) {
             log.error("Error fetching project details for project {}: {}", projectId, e.getMessage(), e);
@@ -466,16 +589,8 @@ public class ProjectService {
             Project project = projectRepository.findById(projectId)
                     .orElseThrow(() -> new RuntimeException("Project not found with ID: " + projectId));
 
-            // Get the GitHub installation for the user
-            GithubAppInstallation installation = githubInstallService.getGithubInstallation(userId);
-
-            // Create installation token
-            long installationId = Long.parseLong(installation.getInstallationId());
-            String appJwt = gitHubAppAuthService.generateAppJWT();
-            String installationToken = gitHubService.createInstallationToken(installationId, appJwt);
-
-            // Extract repo full name from git link
             String repoFullName = extractRepoFullName(project.getGitLink());
+            String installationToken = resolveInstallationToken(repoFullName.split("/")[0], userId);
 
             // Fetch commit diff from GitHub
             JsonNode commitDiff = gitHubService.getCommitDiff(repoFullName, commitHash, installationToken);
@@ -516,6 +631,48 @@ public class ProjectService {
         //    and delete — cascade handles contributors, deployments, join tables.
         projectRepository.findById(projectId).ifPresent(projectRepository::delete);
         log.info("Deleted project {} by user {}", projectId, userId);
+    }
+
+    public Map<String, Object> commitAndPush(
+            Long userId,
+            String repoOwner,
+            String repoName,
+            String commitMessage,
+            String branch,
+            Map<String, String> files,
+            String authorName,
+            String authorEmail) throws Exception {
+
+        String repoFullName = repoOwner + "/" + repoName;
+        String installationToken = resolveInstallationToken(repoOwner, userId);
+        return gitHubService.commitFiles(repoFullName, branch, commitMessage, files, authorName, authorEmail, installationToken);
+    }
+
+    /**
+     * Resolves an installation token scoped to the repo owner's GitHub App installation.
+     * This allows contributors (and any authenticated user) to access repos owned by
+     * someone else, as long as the owner installed the GitHub App on that repo.
+     *
+     * Falls back to the requesting user's installation if the owner's is not found.
+     */
+    private String resolveInstallationToken(String repoOwnerGithubUsername, Long fallbackUserId) throws Exception {
+        if (repoOwnerGithubUsername != null && !repoOwnerGithubUsername.isBlank()) {
+            Optional<User> ownerOpt = userRepository.findByGithubUsername(repoOwnerGithubUsername);
+            if (ownerOpt.isPresent()) {
+                try {
+                    GithubAppInstallation inst = githubInstallService.getGithubInstallation(ownerOpt.get().getUserId());
+                    String appJwt = gitHubAppAuthService.generateAppJWT();
+                    log.debug("Using repo owner '{}' installation for GitHub access", repoOwnerGithubUsername);
+                    return gitHubService.createInstallationToken(Long.parseLong(inst.getInstallationId()), appJwt);
+                } catch (Exception e) {
+                    log.warn("Repo owner '{}' has no GitHub App installation, falling back to requester {}: {}",
+                            repoOwnerGithubUsername, fallbackUserId, e.getMessage());
+                }
+            }
+        }
+        GithubAppInstallation inst = githubInstallService.getGithubInstallation(fallbackUserId);
+        String appJwt = gitHubAppAuthService.generateAppJWT();
+        return gitHubService.createInstallationToken(Long.parseLong(inst.getInstallationId()), appJwt);
     }
 
     private String extractRepoFullName(String gitLink) {

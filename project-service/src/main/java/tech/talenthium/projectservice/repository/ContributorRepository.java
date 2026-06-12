@@ -12,4 +12,5 @@ import java.util.Optional;
 public interface ContributorRepository extends JpaRepository<Contributor, Long> {
     List<Contributor> findByProject(Project project);
     Optional<Contributor> findByProjectAndGithubUsername(Project project, String githubUsername);
+    List<Contributor> findByGithubUsername(String githubUsername);
 }

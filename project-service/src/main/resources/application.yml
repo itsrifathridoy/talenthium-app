@@ -15,7 +15,7 @@ spring:
 github:
   app-id: 1956914                      # your GitHub App ID
   app-slug: talenthium            # slug from GitHub App URL
-  private-key-pem: classpath:secrets/my-github-app-private-key-pkcs8.pem  # server path to downloaded .pem (protect this)
+  private-key-pem: classpath:secrets/talenthium.2025-09-15.private-key.pem
   webhook-secret: secret1234   # also store in secrets manager
   callback-url: http://localhost:8088/project-service/github/callback
   install-token-secret: secret1234

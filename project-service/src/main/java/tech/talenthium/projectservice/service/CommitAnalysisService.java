@@ -15,9 +15,11 @@ import tech.talenthium.projectservice.entity.Contribution;
 import tech.talenthium.projectservice.entity.GithubAppInstallation;
 import tech.talenthium.projectservice.entity.Project;
 import tech.talenthium.projectservice.entity.ProjectTechStack;
+import tech.talenthium.projectservice.entity.User;
 import tech.talenthium.projectservice.repository.ContributionRepository;
 import tech.talenthium.projectservice.repository.ProjectRepository;
 import tech.talenthium.projectservice.repository.ProjectTechStackRepository;
+import tech.talenthium.projectservice.repository.UserRepository;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,6 +47,28 @@ public class CommitAnalysisService {
     private final GitHubService gitHubService;
     private final GithubInstallService githubInstallService;
     private final GitHubAppAuthService gitHubAppAuthService;
+    private final UserRepository userRepository;
+
+    /** Resolves an installation token using the repo owner's GitHub App installation,
+     *  falling back to the requesting user's if the owner isn't a Talenthium user. */
+    private String resolveInstallationToken(String repoOwnerGithubUsername, Long fallbackUserId) throws Exception {
+        if (repoOwnerGithubUsername != null && !repoOwnerGithubUsername.isBlank()) {
+            Optional<User> ownerOpt = userRepository.findByGithubUsername(repoOwnerGithubUsername);
+            if (ownerOpt.isPresent()) {
+                try {
+                    GithubAppInstallation inst = githubInstallService.getGithubInstallation(ownerOpt.get().getUserId());
+                    String appJwt = gitHubAppAuthService.generateAppJWT();
+                    return gitHubService.createInstallationToken(Long.parseLong(inst.getInstallationId()), appJwt);
+                } catch (Exception e) {
+                    log.warn("Repo owner '{}' has no GitHub App installation, falling back to {}: {}",
+                            repoOwnerGithubUsername, fallbackUserId, e.getMessage());
+                }
+            }
+        }
+        GithubAppInstallation inst = githubInstallService.getGithubInstallation(fallbackUserId);
+        String appJwt = gitHubAppAuthService.generateAppJWT();
+        return gitHubService.createInstallationToken(Long.parseLong(inst.getInstallationId()), appJwt);
+    }
 
     /**
      * On-demand analysis: returns cached DB summary if present, otherwise fetches diff,
@@ -66,12 +90,8 @@ public class CommitAnalysisService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new RuntimeException("Project not found: " + projectId));
 
-        GithubAppInstallation installation = githubInstallService.getGithubInstallation(userId);
-        long installationId = Long.parseLong(installation.getInstallationId());
-        String appJwt = gitHubAppAuthService.generateAppJWT();
-        String installationToken = gitHubService.createInstallationToken(installationId, appJwt);
-
         String repoFullName = extractRepoFullName(project.getGitLink());
+        String installationToken = resolveInstallationToken(repoFullName.split("/")[0], userId);
         JsonNode commitData = gitHubService.getCommitDiff(repoFullName, commitHash, installationToken);
 
         CommitSummaryResponse summary = buildAndCallGroq(commitHash, commitData);
@@ -302,11 +322,7 @@ public class CommitAnalysisService {
                 return;
             }
 
-            GithubAppInstallation installation = githubInstallService.getGithubInstallation(userId);
-            long installationId = Long.parseLong(installation.getInstallationId());
-            String appJwt = gitHubAppAuthService.generateAppJWT();
-            String installationToken = gitHubService.createInstallationToken(installationId, appJwt);
-
+            String installationToken = resolveInstallationToken(repoFullName.split("/")[0], userId);
             JsonNode tree = gitHubService.getRepositoryTree(repoFullName, null, installationToken);
             StringBuilder filePaths = new StringBuilder();
             JsonNode treeItems = tree.has("tree") ? tree.get("tree") : tree;

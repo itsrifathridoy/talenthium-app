@@ -4,8 +4,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tech.talenthium.projectservice.dto.event.GithubLinkedEvent;
 import tech.talenthium.projectservice.dto.event.UserCreatedEvent;
 import tech.talenthium.projectservice.entity.User;
+import tech.talenthium.projectservice.kafka.publisher.GithubLinkedPublisher;
 import tech.talenthium.projectservice.repository.UserRepository;
 
 @Service
@@ -13,6 +15,7 @@ import tech.talenthium.projectservice.repository.UserRepository;
 @RequiredArgsConstructor
 public class UserService {
     private final UserRepository userRepository;
+    private final GithubLinkedPublisher githubLinkedPublisher;
 
     @Transactional
     public User createUserFromEvent(UserCreatedEvent event) {
@@ -43,7 +46,16 @@ public class UserService {
                 .orElseThrow(() -> new RuntimeException("User not found: " + userId));
 
         user.setGithubUsername(githubUsername);
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+
+        githubLinkedPublisher.emitEvent(
+                GithubLinkedEvent.builder()
+                        .userId(userId)
+                        .githubUsername(githubUsername)
+                        .build()
+        );
+
+        return saved;
     }
 
     public User getUserById(Long userId) {

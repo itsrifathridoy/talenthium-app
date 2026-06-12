@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.time.Instant;
 
@@ -43,6 +44,11 @@ public class Contributor {
 
     @Column(nullable = false)
     private String role;
+
+    @Column(nullable = false)
+    @ColumnDefault("true")
+    @Builder.Default
+    private boolean active = true;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

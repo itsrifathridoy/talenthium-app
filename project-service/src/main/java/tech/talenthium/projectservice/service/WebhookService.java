@@ -27,6 +27,7 @@ public class WebhookService {
     private final ContributionRepository contributionRepository;
     private final ContributorRepository contributorRepository;
     private final CommitAnalysisService commitAnalysisService;
+    private final UserService userService;
 
     /**
      * Handle installation deleted webhook event
@@ -65,8 +66,13 @@ public class WebhookService {
             log.info("Processing installation creation - Installation ID: {}, Owner ID: {}, Repos: {}",
                     installationId, ownerId, repositories.size());
 
-            // The GithubInstallService already handles this
-            log.info("Installation created webhook received - Installation ID: {}", installationId);
+            String githubUsername = installation.path("account").path("login").asText();
+
+            githubInstallRepo.findByInstallationId(installationId).ifPresent(install -> {
+                long userId = install.getOwnerId();
+                userService.updateGithubInfo(userId, githubUsername, null);
+                log.info("Updated githubUsername={} for user {} from installation webhook", githubUsername, userId);
+            });
         } catch (Exception e) {
             log.error("Error handling installation creation: {}", e.getMessage(), e);
         }
@@ -112,9 +118,11 @@ public class WebhookService {
             String repoFullName = payload.path("repository").path("full_name").asText();
             JsonNode commitsNode = payload.path("commits");
             boolean isDeleted = payload.path("deleted").asBoolean();
+            String ref = payload.path("ref").asText();
+            String branch = ref.startsWith("refs/heads/") ? ref.substring("refs/heads/".length()) : ref;
 
-            log.info("Processing push event - Repository: {}, Commits: {}, Deleted: {}",
-                    repoFullName, commitsNode.size(), isDeleted);
+            log.info("Processing push event - Repository: {}, Branch: {}, Commits: {}, Deleted: {}",
+                    repoFullName, branch, commitsNode.size(), isDeleted);
 
             if (isDeleted) {
                 log.info("Branch was deleted, skipping commit processing");
@@ -142,7 +150,7 @@ public class WebhookService {
 
             // Process commits for each matching project
             for (Project project : matchingProjects) {
-                processCommitsForProject(project, commitsNode, repoFullName);
+                processCommitsForProject(project, commitsNode, repoFullName, branch);
             }
 
         } catch (Exception e) {
@@ -154,7 +162,7 @@ public class WebhookService {
      * Process commits from webhook payload and create/update contributions and contributors.
      * Triggers async AI analysis for each newly saved commit.
      */
-    private void processCommitsForProject(Project project, JsonNode commits, String repoFullName) {
+    private void processCommitsForProject(Project project, JsonNode commits, String repoFullName, String branch) {
         int saved = 0;
         int skipped = 0;
 
@@ -178,12 +186,19 @@ public class WebhookService {
                 String authorName = authorNode.path("name").asText();
                 String authorEmail = authorNode.path("email").asText();
                 String authorUsername = authorNode.path("username").asText();
+                JsonNode avatarNode = authorNode.get("avatar_url");
+                String avatarUrl = null;
+
+                if (avatarNode != null && !avatarNode.isNull()) {
+                    avatarUrl = avatarNode.asText();
+                }
 
                 if (authorUsername == null || authorUsername.isEmpty()) {
                     authorUsername = commit.path("committer").path("username").asText();
                 }
 
-                Contributor contributor = findOrCreateContributor(project, authorName, authorUsername, authorEmail);
+
+                Contributor contributor = findOrCreateContributor(project, authorName, authorUsername, authorEmail,avatarUrl);
 
                 Instant committedDate;
                 try {
@@ -198,6 +213,7 @@ public class WebhookService {
                         .contributor(contributor)
                         .commitSha(commitId)
                         .commitMessage(message)
+                        .branch(branch)
                         .type("Commit")
                         .committedDate(committedDate)
                         .build();
@@ -223,7 +239,7 @@ public class WebhookService {
     /**
      * Find existing contributor or create new one
      */
-    private Contributor findOrCreateContributor(Project project, String name, String githubUsername, String email) {
+    private Contributor findOrCreateContributor(Project project, String name, String githubUsername, String email,String avatarUrl) {
         // Try to find by GitHub username first (most reliable)
         if (githubUsername != null && !githubUsername.isEmpty()) {
             Optional<Contributor> existing = contributorRepository.findByProjectAndGithubUsername(project, githubUsername);
@@ -239,6 +255,7 @@ public class WebhookService {
                 .githubUsername(githubUsername)
                 .email(email)
                 .role("Contributor")
+                .avatarUrl(avatarUrl)
                 .build();
 
         return contributorRepository.save(newContributor);

@@ -13,7 +13,10 @@ import java.util.List;
 @AllArgsConstructor
 public class ProjectDetailResponse {
     private Long id;
+    private Long ownerId;
     private String title;
+    private String webhookUrl;
+    private String deployPublicKey;
     private String tagline;
     private String shortDescription;
     private String detailedDescription;
@@ -101,5 +104,10 @@ public class ProjectDetailResponse {
         private String log;
         private String startedAt;
         private String completedAt;
+        private String branch;
+        private String commitHash;
+        private String title;
+        private String dokployDeploymentId;
+        private String dokployApplicationId;
     }
 }

@@ -111,7 +111,6 @@ export const ContributionTimeline: React.FC<{
                       src={avatarUrl(item.author, item.authorAvatar)}
                       alt={item.author}
                       className={`w-8 h-8 rounded-full border-2 flex-shrink-0 ${dark ? "border-white/20" : "border-gray-300"}`}
-                      onError={(e) => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(item.author)}`; }}
                     />
                     <span className={`font-semibold ${dark ? "text-white" : "text-gray-900"}`}>{item.author}</span>
                     <span className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>{formatDate(item.date)}</span>
@@ -187,7 +186,6 @@ export const ContributionTimeline: React.FC<{
                     src={avatarUrl(selected.author, selected.authorAvatar)}
                     alt={selected.author}
                     className="w-10 h-10 rounded-full border-2 border-white/20"
-                    onError={(e) => { (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(selected.author)}`; }}
                   />
                   <div>
                     <div className={`font-bold ${dark ? "text-white" : "text-gray-900"}`}>{selected.author}</div>

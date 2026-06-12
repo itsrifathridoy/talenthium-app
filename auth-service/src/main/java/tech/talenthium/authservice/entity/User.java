@@ -53,6 +53,9 @@ public class User {
 
     private String avatar;
 
+    @Column(name = "github_username")
+    private String githubUsername;
+
     @Enumerated(EnumType.STRING)
     private Role role;
 

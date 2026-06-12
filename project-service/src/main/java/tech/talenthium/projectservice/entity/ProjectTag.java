@@ -1,5 +1,6 @@
 package tech.talenthium.projectservice.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
@@ -24,6 +25,7 @@ public class ProjectTag {
     @Column(unique = true)  // avoid duplicate tags
     private String tag;
 
+    @JsonIgnore
     @ManyToMany(mappedBy = "tags")
     private List<Project> projects = new ArrayList<>();
 }

@@ -27,11 +27,17 @@ public class Deployment {
 
     @NotNull
     private DeploymentStatus status;
+
     @Column(columnDefinition = "TEXT")
     private String log;
 
-    private LocalDateTime startedAt=LocalDateTime.now();
-
+    private LocalDateTime startedAt = LocalDateTime.now();
     private LocalDateTime completedAt;
 
+    // Dokploy integration
+    private String dokployApplicationId;
+    private String dokployDeploymentId;
+    private String branch;
+    private String commitHash;
+    private String title;
 }

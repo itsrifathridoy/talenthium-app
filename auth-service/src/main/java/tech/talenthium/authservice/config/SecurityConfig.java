@@ -1,6 +1,7 @@
 package tech.talenthium.authservice.config;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -13,11 +14,19 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.client.oidc.authentication.OidcIdTokenDecoderFactory;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.client.oidc.authentication.OidcIdTokenValidator;
+import org.springframework.security.oauth2.jwt.JwtDecoderFactory;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
 import tech.talenthium.authservice.filter.JwtAuthenticationFilter;
 import tech.talenthium.authservice.security.*;
+
+import java.time.Duration;
 
 @Configuration
 @EnableMethodSecurity
@@ -33,6 +42,9 @@ public class SecurityConfig {
     private final CustomOidcUserService customOidcUserService;
     private final PasswordEncoder passwordEncoder;
 
+    @Value("${app.oauth2.error-uri:http://localhost:5000/api/auth/oauth2/error}")
+    private String oauth2ErrorUri;
+
     // Authentication provider for JWT and username/password login
     @Bean
     public AuthenticationProvider authenticationProvider() {
@@ -46,6 +58,21 @@ public class SecurityConfig {
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
         return authConfig.getAuthenticationManager();
+    }
+
+    // Allow up to 5 minutes of clock skew for OIDC ID token iat/exp validation
+    @Bean
+    public JwtDecoderFactory<ClientRegistration> idTokenDecoderFactory() {
+        OidcIdTokenDecoderFactory factory = new OidcIdTokenDecoderFactory();
+        factory.setJwtValidatorFactory(clientRegistration -> {
+            OidcIdTokenValidator oidcValidator = new OidcIdTokenValidator(clientRegistration);
+            oidcValidator.setClockSkew(Duration.ofMinutes(5));
+            return new DelegatingOAuth2TokenValidator<>(
+                    JwtValidators.createDefault(),
+                    oidcValidator
+            );
+        });
+        return factory;
     }
 
     // Main security filter chain
@@ -94,7 +121,7 @@ public class SecurityConfig {
                         .successHandler(oAuth2AuthenticationSuccessHandler)
                         .failureHandler((request, response, exception) -> {
                             System.out.println(exception.getMessage());
-                            response.sendRedirect("/api/auth/oauth2/error"); // custom page
+                            response.sendRedirect(oauth2ErrorUri);
                         })
 
                 )

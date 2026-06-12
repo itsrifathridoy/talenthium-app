@@ -1,5 +1,6 @@
 package tech.talenthium.projectservice.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -22,6 +23,7 @@ public class ProjectTechStack {
     @Column(unique = true)  // avoid duplicate tech entries
     private String technology;
 
+    @JsonIgnore
     @ManyToMany(mappedBy = "techStack")
     private List<Project> projects = new ArrayList<>();
 }

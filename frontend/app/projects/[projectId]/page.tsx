@@ -8,10 +8,12 @@ import { DeploymentSection } from "../../../components/DeploymentSection";
 import { RelatedProjects } from "../../../components/RelatedProjects";
 import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FaGithub, FaExternalLinkAlt, FaCode, FaCog, FaUsers, FaChartLine, FaEye, FaStar, FaCodeBranch, FaSpinner, FaArrowLeft, FaFolder, FaFolderOpen, FaFileAlt, FaChevronRight, FaExpand, FaCompress } from "react-icons/fa";
+import { FaGithub, FaExternalLinkAlt, FaCode, FaCog, FaUsers, FaChartLine, FaEye, FaStar, FaCodeBranch, FaSpinner, FaArrowLeft, FaFolder, FaFolderOpen, FaFileAlt, FaChevronRight, FaExpand, FaCompress, FaTerminal, FaRocket } from "react-icons/fa";
+import Link from "next/link";
 import Editor, { DiffEditor } from "@monaco-editor/react";
 import { GlassCard } from "../../../components/GlassCard";
-import { projectApi } from "../../../lib/project-service";
+import { projectApi, syncContributions, searchGithubUsers, addContributor, removeContributorAccess, deleteContributor } from "../../../lib/project-service";
+import { useAuth } from "@/lib/auth-context";
 
 const mockProject = {
   id: "1",
@@ -114,12 +116,13 @@ export function MentorMatcher() {
   );
 }`;
 
-type TabType = "overview" | "contributions" | "contributors" | "code" | "settings";
+type TabType = "overview" | "contributions" | "contributors" | "code" | "deployments" | "settings";
 
 export default function ProjectPage() {
   const params = useParams();
   const router = useRouter();
   const projectId = params?.projectId as string;
+  const { user } = useAuth();
 
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [activeTab, setActiveTab] = useState<TabType>("overview");
@@ -141,6 +144,8 @@ export default function ProjectPage() {
   const [repoTreeLoading, setRepoTreeLoading] = useState(false);
   const [fileContent, setFileContent] = useState<string>("");
   const [fileContentLoading, setFileContentLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null;
@@ -159,8 +164,11 @@ export default function ProjectPage() {
       const apiProject = response.data;
       const mappedProject = {
         id: apiProject.id,
+        ownerId: apiProject.ownerId ?? apiProject.owner?.id,
         title: apiProject.title,
         githubUrl: apiProject.githubUrl,
+        webhookUrl: apiProject.webhookUrl,
+        deployPublicKey: apiProject.deployPublicKey,
         liveUrl: apiProject.liveUrl,
         status: apiProject.status,
         privacy: apiProject.privacy,
@@ -173,13 +181,20 @@ export default function ProjectPage() {
         longDescription: apiProject.detailedDescription || '',
         techStack: apiProject.techStack || [],
         stats: apiProject.stats,
-        contributors: (apiProject.contributors || []).map((c: any) => ({
-          name: c.name,
-          avatar: c.avatar,
-          contributions: c.contributions,
-          role: c.role,
-          profileLink: c.profileLink,
-        })),
+        contributors: (apiProject.contributors || []).map((c: any) => {
+          const contribCount = (apiProject.contributions || []).filter(
+            (con: any) => con.contributor?.contributorId === c.contributorId
+          ).length;
+          return {
+            contributorId: c.contributorId,
+            name: c.name,
+            avatar: c.avatarUrl || `https://github.com/${c.githubUsername}.png`,
+            contributions: contribCount,
+            role: c.role,
+            githubUsername: c.githubUsername,
+            active: c.active !== false,
+          };
+        }),
         contributions: (apiProject.contributions || []).map((c: any) => ({
           id: c.id,
           date: c.date,
@@ -305,6 +320,22 @@ export default function ProjectPage() {
       setFileContent('// Failed to load file content\n// Error: ' + (err as any)?.message);
     } finally {
       setFileContentLoading(false);
+    }
+  };
+
+  const handleSyncContributions = async () => {
+    if (!projectId || syncLoading) return;
+    setSyncLoading(true);
+    setSyncMessage(null);
+    try {
+      await syncContributions(projectId);
+      setSyncMessage("Sync complete");
+      await fetchProjectDetails();
+    } catch (err: any) {
+      setSyncMessage(err.response?.data?.message || "Sync failed");
+    } finally {
+      setSyncLoading(false);
+      setTimeout(() => setSyncMessage(null), 4000);
     }
   };
 
@@ -460,6 +491,7 @@ export default function ProjectPage() {
     { id: "contributions", label: "Contributions", icon: <FaChartLine /> },
     { id: "contributors", label: "Contributors", icon: <FaUsers /> },
     { id: "code", label: "Code", icon: <FaCode /> },
+    { id: "deployments", label: "Deployments", icon: <FaRocket /> },
     { id: "settings", label: "Settings", icon: <FaCog /> },
   ];
 
@@ -633,18 +665,28 @@ export default function ProjectPage() {
                 </div>
                 
                 <div className="flex items-center gap-3">
-                  <a 
-                    href={project.githubUrl} 
-                    target="_blank" 
+                  <a
+                    href={project.githubUrl}
+                    target="_blank"
                     rel="noopener noreferrer"
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg ${
-                      theme === 'dark' 
-                        ? 'bg-white/10 hover:bg-white/20 text-white' 
+                      theme === 'dark'
+                        ? 'bg-white/10 hover:bg-white/20 text-white'
                         : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
                     } transition-colors`}
                   >
                     <FaGithub /> GitHub
                   </a>
+                  <Link
+                    href={`/projects/${projectId}/live-coding`}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                      theme === 'dark'
+                        ? 'bg-[#13ff8c]/15 hover:bg-[#13ff8c]/25 text-[#13ff8c]'
+                        : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700'
+                    }`}
+                  >
+                    <FaTerminal /> Live Coding
+                  </Link>
                   {project.liveUrl && (
                     <a 
                       href={project.liveUrl} 
@@ -742,9 +784,12 @@ export default function ProjectPage() {
                 summaryLoading={summaryLoading}
                 summaryError={summaryError}
                 onAnalyzeCommit={handleAnalyzeCommit}
+                onSync={handleSyncContributions}
+                syncLoading={syncLoading}
+                syncMessage={syncMessage}
               />
             )}
-            {activeTab === "contributors" && <ContributorsTab theme={theme} contributors={project.contributors} />}
+            {activeTab === "contributors" && <ContributorsTab theme={theme} contributors={project.contributors} projectId={projectId} onRefresh={fetchProjectDetails} isOwner={!!(user?.userID && project?.ownerId && Number(user.userID) === Number(project.ownerId))} />}
             {activeTab === "code" && (
               <CodeTab 
                 theme={theme} 
@@ -756,6 +801,17 @@ export default function ProjectPage() {
                 fileContentLoading={fileContentLoading}
                 onFileSelect={fetchFileContent}
                 onRefreshTree={fetchRepositoryTree}
+              />
+            )}
+            {activeTab === "deployments" && (
+              <DeploymentSection
+                theme={theme}
+                projectId={projectId}
+                isOwner={!!(user?.userID && project?.ownerId && Number(user.userID) === Number(project.ownerId))}
+                githubUrl={project.githubUrl}
+                webhookUrl={project.webhookUrl}
+                deployPublicKey={project.deployPublicKey}
+                initialDeployments={project.deployments ?? []}
               />
             )}
             {activeTab === "settings" && <SettingsTab theme={theme} project={project} projectId={projectId} onDeleted={() => router.push("/projects")} />}
@@ -922,7 +978,7 @@ function OverviewTab({ theme, project, projectId, onRefresh }: { theme: "light" 
       <ContributionTimeline theme={theme} contributions={project.contributions || []} />
       
       {/* Deployment Section */}
-      <DeploymentSection theme={theme} />
+      <DeploymentSection theme={theme} projectId={projectId} githubUrl={project.githubUrl} webhookUrl={project.webhookUrl} initialDeployments={project.deployments ?? []} />
       
       {/* Related Projects */}
       <RelatedProjects theme={theme} />
@@ -950,6 +1006,9 @@ function ContributionsTab({
   summaryLoading,
   summaryError,
   onAnalyzeCommit,
+  onSync,
+  syncLoading,
+  syncMessage,
 }: {
   theme: "light" | "dark";
   contributions: any[];
@@ -969,6 +1028,9 @@ function ContributionsTab({
   summaryLoading: boolean;
   summaryError: string | null;
   onAnalyzeCommit: (contribution: any) => void;
+  onSync: () => void;
+  syncLoading: boolean;
+  syncMessage: string | null;
 }) {
   const typeColors: Record<string, { dark: string; light: string }> = {
     Feature: { dark: 'bg-blue-500/20 text-blue-400', light: 'bg-blue-100 text-blue-700' },
@@ -1157,6 +1219,32 @@ function ContributionsTab({
               Contributions
             </h2>
             <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onSync}
+                  disabled={syncLoading}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60 ${
+                    theme === 'dark'
+                      ? 'bg-[#13ff8c] text-black hover:bg-[#19fb9b]'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  }`}
+                >
+                  {syncLoading
+                    ? <><FaSpinner className="animate-spin" /> Syncing…</>
+                    : <><FaCodeBranch /> Sync Contributions</>
+                  }
+                </button>
+                {syncMessage && (
+                  <span className={`text-xs px-2 py-1 rounded ${
+                    syncMessage.toLowerCase().includes('fail') || syncMessage.toLowerCase().includes('error')
+                      ? theme === 'dark' ? 'text-red-400' : 'text-red-600'
+                      : theme === 'dark' ? 'text-[#13ff8c]' : 'text-emerald-600'
+                  }`}>
+                    {syncMessage}
+                  </span>
+                )}
+              </div>
               {branches.length > 0 ? (
                 <div className="flex items-center gap-2">
                   <FaCodeBranch className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} />
@@ -1475,14 +1563,181 @@ function ContributionsTab({
 }
 
 // Contributors Tab Component
-function ContributorsTab({ theme, contributors }: { theme: "light" | "dark"; contributors: any[] }) {
+function ContributorsTab({ theme, contributors, projectId, onRefresh, isOwner }: {
+  theme: "light" | "dark";
+  contributors: any[];
+  projectId: string;
+  onRefresh: () => void;
+  isOwner: boolean;
+}) {
   const contribList = contributors || [];
+  const [showSearch, setShowSearch] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const [results, setResults] = React.useState<any[]>([]);
+  const [searching, setSearching] = React.useState(false);
+  const [adding, setAdding] = React.useState<string | null>(null);
+  const [addMsg, setAddMsg] = React.useState<{ text: string; ok: boolean } | null>(null);
+  const [actionLoading, setActionLoading] = React.useState<number | null>(null);
+  const [actionMsg, setActionMsg] = React.useState<{ id: number; text: string; ok: boolean } | null>(null);
+
+  const handleRemoveAccess = async (contributorId: number) => {
+    setActionLoading(contributorId);
+    setActionMsg(null);
+    try {
+      await removeContributorAccess(projectId, contributorId);
+      setActionMsg({ id: contributorId, text: "Access removed", ok: true });
+      onRefresh();
+    } catch (err: any) {
+      setActionMsg({ id: contributorId, text: err.response?.data?.message || "Failed", ok: false });
+    } finally {
+      setActionLoading(null);
+      setTimeout(() => setActionMsg(null), 3000);
+    }
+  };
+
+  const handleDelete = async (contributorId: number) => {
+    setActionLoading(contributorId);
+    setActionMsg(null);
+    try {
+      await deleteContributor(projectId, contributorId);
+      setActionMsg({ id: contributorId, text: "Removed", ok: true });
+      onRefresh();
+    } catch (err: any) {
+      setActionMsg({ id: contributorId, text: err.response?.data?.message || "Failed", ok: false });
+    } finally {
+      setActionLoading(null);
+      setTimeout(() => setActionMsg(null), 3000);
+    }
+  };
+
+  React.useEffect(() => {
+    if (query.trim().length < 2) { setResults([]); return; }
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await searchGithubUsers(query.trim());
+        setResults(res.data || []);
+      } catch { setResults([]); }
+      finally { setSearching(false); }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const handleAdd = async (githubUsername: string) => {
+    setAdding(githubUsername);
+    setAddMsg(null);
+    try {
+      await addContributor(projectId, githubUsername);
+      setAddMsg({ text: "Added!", ok: true });
+      onRefresh();
+    } catch (err: any) {
+      setAddMsg({ text: err.response?.data?.message || "Failed to add", ok: false });
+    } finally {
+      setAdding(null);
+      setTimeout(() => setAddMsg(null), 3000);
+    }
+  };
 
   return (
     <GlassCard theme={theme} className={`${theme === 'dark' ? 'bg-white/5 border-white/10' : 'bg-white/90 border-gray-200'} border rounded-2xl p-8`}>
-      <h2 className={`text-2xl font-bold mb-6 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-        Project Contributors
-      </h2>
+      <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
+        <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+          Project Contributors
+        </h2>
+        <button
+          type="button"
+          onClick={() => { setShowSearch(!showSearch); setQuery(""); setResults([]); setAddMsg(null); }}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+            theme === 'dark'
+              ? 'bg-[#13ff8c] text-black hover:bg-[#19fb9b]'
+              : 'bg-emerald-600 text-white hover:bg-emerald-700'
+          }`}
+        >
+          <FaUsers /> Add Contributor
+        </button>
+      </div>
+
+      {/* Search panel */}
+      <AnimatePresence>
+        {showSearch && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mb-6"
+          >
+            <div className={`rounded-xl border p-4 ${theme === 'dark' ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}>
+              <p className={`text-sm mb-3 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                Search for users who have connected their GitHub account:
+              </p>
+              <input
+                autoFocus
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search by name or GitHub username…"
+                className={`w-full px-4 py-2.5 rounded-lg border text-sm outline-none ${
+                  theme === 'dark'
+                    ? 'bg-white/10 border-white/20 text-white placeholder-gray-500 focus:border-[#13ff8c]/50'
+                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-emerald-400'
+                }`}
+              />
+              {addMsg && (
+                <p className={`mt-2 text-xs font-medium ${addMsg.ok ? (theme === 'dark' ? 'text-[#13ff8c]' : 'text-emerald-600') : (theme === 'dark' ? 'text-red-400' : 'text-red-600')}`}>
+                  {addMsg.text}
+                </p>
+              )}
+              {searching && (
+                <div className={`flex items-center gap-2 mt-3 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <FaSpinner className="animate-spin" /> Searching…
+                </div>
+              )}
+              {!searching && results.length > 0 && (
+                <ul className="mt-3 space-y-2">
+                  {results.map((user: any) => {
+                    const alreadyAdded = contribList.some((c: any) => c.githubUsername === user.githubUsername);
+                    return (
+                      <li key={user.userId} className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg ${theme === 'dark' ? 'bg-white/5' : 'bg-white border border-gray-100'}`}>
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={user.avatarUrl && user.avatarUrl !== 'null' ? user.avatarUrl : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.name)}`}
+                            alt={user.name}
+                            className="w-9 h-9 rounded-full"
+                          />
+                          <div>
+                            <div className={`text-sm font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{user.name}</div>
+                            <div className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>@{user.githubUsername}</div>
+                          </div>
+                        </div>
+                        {alreadyAdded ? (
+                          <span className={`text-xs px-2 py-1 rounded ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Already added</span>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={adding === user.githubUsername}
+                            onClick={() => handleAdd(user.githubUsername)}
+                            className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-all disabled:opacity-60 ${
+                              theme === 'dark'
+                                ? 'bg-[#13ff8c]/20 text-[#13ff8c] hover:bg-[#13ff8c]/30'
+                                : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                            }`}
+                          >
+                            {adding === user.githubUsername ? <FaSpinner className="animate-spin inline" /> : "Add"}
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {!searching && query.trim().length >= 2 && results.length === 0 && (
+                <p className={`mt-3 text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>No users found with a linked GitHub account.</p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {contribList.length === 0 ? (
         <p className={`text-center py-8 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
           No contributors yet
@@ -1490,33 +1745,49 @@ function ContributorsTab({ theme, contributors }: { theme: "light" | "dark"; con
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {contribList.map((contributor: any, i: number) => (
-            <motion.a
+            <motion.div
               key={i}
-              href={contributor.profileLink}
-              target={contributor.profileLink?.startsWith('http://localhost') ? '_self' : '_blank'}
-              rel={contributor.profileLink?.startsWith('http://localhost') ? undefined : 'noopener noreferrer'}
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: i * 0.1 }}
-              className={`block p-6 rounded-xl border ${
+              className={`p-6 rounded-xl border ${
                 theme === 'dark'
-                  ? 'bg-white/5 border-white/10 hover:bg-white/10'
-                  : 'bg-white border-gray-200 hover:shadow-lg'
-              } transition-all cursor-pointer`}
+                  ? 'bg-white/5 border-white/10'
+                  : 'bg-white border-gray-200'
+              } ${contributor.active === false ? 'opacity-60' : ''}`}
             >
               <div className="flex items-center gap-4 mb-4">
-                <img
-                  src={contributor.avatar}
-                  alt={contributor.name}
-                  className="w-16 h-16 rounded-full border-2 border-white/20"
-                />
-                <div>
-                  <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                    {contributor.name}
-                  </h3>
+                <a
+                  href={`https://github.com/${contributor.githubUsername}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0"
+                >
+                  <img
+                    src={contributor.avatar && contributor.avatar !== 'null' ? contributor.avatar : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(contributor.name)}`}
+                    alt={contributor.name}
+                    className="w-16 h-16 rounded-full border-2 border-white/20"
+                  />
+                </a>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                      {contributor.name}
+                    </h3>
+                    {contributor.active === false && (
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                        theme === 'dark' ? 'bg-red-500/20 text-red-400' : 'bg-red-100 text-red-600'
+                      }`}>No Access</span>
+                    )}
+                  </div>
                   <span className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                     {contributor.role}
                   </span>
+                  {contributor.githubUsername && (
+                    <div className={`text-xs mt-0.5 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                      @{contributor.githubUsername}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className={`flex items-center justify-between pt-4 border-t ${
@@ -1529,7 +1800,44 @@ function ContributorsTab({ theme, contributors }: { theme: "light" | "dark"; con
                   {contributor.contributions}
                 </span>
               </div>
-            </motion.a>
+              {isOwner && (
+                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-dashed flex-wrap" style={{ borderColor: theme === 'dark' ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.08)' }}>
+                  {!!actionMsg && actionMsg.id === contributor.contributorId && (
+                    <span className={`text-xs font-medium mr-auto ${actionMsg.ok ? (theme === 'dark' ? 'text-[#13ff8c]' : 'text-emerald-600') : (theme === 'dark' ? 'text-red-400' : 'text-red-600')}`}>
+                      {actionMsg.text}
+                    </span>
+                  )}
+                  {contributor.active !== false && (
+                    <button
+                      type="button"
+                      disabled={actionLoading === contributor.contributorId}
+                      onClick={() => handleRemoveAccess(contributor.contributorId)}
+                      className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all disabled:opacity-50 ${
+                        theme === 'dark'
+                          ? 'bg-yellow-500/15 text-yellow-300 hover:bg-yellow-500/25'
+                          : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                      }`}
+                    >
+                      {actionLoading === contributor.contributorId ? <FaSpinner className="animate-spin inline" /> : "Remove Access"}
+                    </button>
+                  )}
+                  {contributor.contributions === 0 && (
+                    <button
+                      type="button"
+                      disabled={actionLoading === contributor.contributorId}
+                      onClick={() => handleDelete(contributor.contributorId)}
+                      className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all disabled:opacity-50 ${
+                        theme === 'dark'
+                          ? 'bg-red-500/15 text-red-400 hover:bg-red-500/25'
+                          : 'bg-red-100 text-red-600 hover:bg-red-200'
+                      }`}
+                    >
+                      {actionLoading === contributor.contributorId ? <FaSpinner className="animate-spin inline" /> : "Delete"}
+                    </button>
+                  )}
+                </div>
+              )}
+            </motion.div>
           ))}
         </div>
       )}

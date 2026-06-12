@@ -50,6 +50,21 @@ public class Project {
     @Column(name = "default_branch")
     private String defaultBranch;
 
+    @Column(name = "dokploy_project_id")
+    private String dokployProjectId;
+
+    @Column(name = "dokploy_application_id")
+    private String dokployApplicationId;
+
+    @Column(name = "dokploy_refresh_token")
+    private String dokployRefreshToken;
+
+    @Column(name = "dokploy_ssh_key_id")
+    private String dokploySshKeyId;
+
+    @Column(name = "dokploy_public_key", columnDefinition = "TEXT")
+    private String dokployPublicKey;
+
     @NotNull
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

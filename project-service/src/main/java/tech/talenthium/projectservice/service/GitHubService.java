@@ -8,20 +8,26 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.http.MediaType;
 import tech.talenthium.projectservice.dto.response.FileContentResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class GitHubService {
-    private final RestTemplate rest = new RestTemplate();
+    private final RestTemplate rest = new RestTemplate(new HttpComponentsClientHttpRequestFactory());
     private final ObjectMapper mapper = new ObjectMapper();
 
     public String createInstallationToken(long installationId, String appJwt) throws Exception {
@@ -441,6 +447,33 @@ public class GitHubService {
     }
 
     /**
+     * Fetches GitHub App installation info using the App JWT.
+     * Returns the installation's account (owner) info including login.
+     *
+     * @param installationId - GitHub App installation ID
+     * @param appJwt         - Signed GitHub App JWT
+     * @return JsonNode containing the installation (includes account.login)
+     */
+    public JsonNode getInstallationInfo(long installationId, String appJwt) {
+        try {
+            String url = "https://api.github.com/app/installations/" + installationId;
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(appJwt);
+            headers.set("Accept", "application/vnd.github+json");
+
+            ResponseEntity<JsonNode> resp = rest.exchange(url, HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class);
+            if (resp.getStatusCode().is2xxSuccessful() && resp.getBody() != null) {
+                return resp.getBody();
+            }
+            log.error("Failed to fetch installation info for {}: {}", installationId, resp.getStatusCode());
+            return null;
+        } catch (Exception e) {
+            log.error("Error fetching installation info for {}: {}", installationId, e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
      * Gets the authenticated user's GitHub information using an installation token.
      * Returns user details including login, name, email, avatar, etc.
      *
@@ -502,6 +535,246 @@ public class GitHubService {
         }
         
         throw new RuntimeException("Failed to fetch commit diff: " + resp.getStatusCode());
+    }
+
+    /**
+     * Add a GitHub user as a repository collaborator.
+     * Sends an invitation (201) or is a no-op if already a collaborator (204).
+     * Requires the GitHub App to have Administration: Read & Write permission.
+     *
+     * @param repoFullName      - owner/repo
+     * @param githubUsername    - GitHub username to invite
+     * @param permission        - "pull", "triage", "push", "maintain", or "admin"
+     * @param installationToken - GitHub installation access token
+     */
+    public void addRepositoryCollaborator(String repoFullName, String githubUsername,
+                                          String permission, String installationToken) {
+        String url = "https://api.github.com/repos/" + repoFullName + "/collaborators/" + githubUsername;
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(installationToken);
+        headers.set("Accept", "application/vnd.github+json");
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, String> body = new LinkedHashMap<>();
+        body.put("permission", permission != null ? permission : "push");
+
+        ResponseEntity<JsonNode> resp = rest.exchange(url, HttpMethod.PUT,
+                new HttpEntity<>(body, headers), JsonNode.class);
+
+        if (!resp.getStatusCode().is2xxSuccessful()) {
+            throw new RuntimeException("Failed to add collaborator " + githubUsername + ": " + resp.getStatusCode());
+        }
+        // 201 = invitation sent, 204 = already a collaborator (no body)
+        log.info("Added {} as {} collaborator on {}", githubUsername, permission, repoFullName);
+    }
+
+    /**
+     * Register a webhook on a GitHub repository.
+     * Silently succeeds if an identical webhook URL already exists (422 from GitHub).
+     * Requires the GitHub App to have Webhooks: Read & Write permission.
+     */
+    public void createWebhook(String repoOwner, String repoName, String webhookUrl, String installationToken) {
+        String url = "https://api.github.com/repos/" + repoOwner + "/" + repoName + "/hooks";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(installationToken);
+        headers.set("Accept", "application/vnd.github+json");
+        headers.set("X-GitHub-Api-Version", "2022-11-28");
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("url", webhookUrl);
+        config.put("content_type", "json");
+        config.put("insecure_ssl", "0");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", "web");
+        body.put("active", true);
+        body.put("events", List.of("push"));
+        body.put("config", config);
+
+        try {
+            rest.exchange(url, HttpMethod.POST, new HttpEntity<>(body, headers), JsonNode.class);
+            log.info("GitHub webhook registered for {}/{}", repoOwner, repoName);
+        } catch (Exception e) {
+            if (e.getMessage() != null && e.getMessage().contains("422")) {
+                log.info("GitHub webhook already exists for {}/{} — skipping", repoOwner, repoName);
+                return;
+            }
+            throw new RuntimeException("Failed to register GitHub webhook: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Add a deploy key to a GitHub repository.
+     * Silently succeeds if the same key is already registered (422 from GitHub).
+     * Requires the GitHub App to have Administration: Read & Write permission.
+     */
+    public void createDeployKey(String repoOwner, String repoName, String publicKey, String installationToken) {
+        String url = "https://api.github.com/repos/" + repoOwner + "/" + repoName + "/keys";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(installationToken);
+        headers.set("Accept", "application/vnd.github+json");
+        headers.set("X-GitHub-Api-Version", "2022-11-28");
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("title", "Talenthium deploy key");
+        body.put("key", publicKey);
+        body.put("read_only", false);
+
+        try {
+            rest.exchange(url, HttpMethod.POST, new HttpEntity<>(body, headers), JsonNode.class);
+            log.info("Deploy key registered for {}/{}", repoOwner, repoName);
+        } catch (Exception e) {
+            if (e.getMessage() != null && e.getMessage().contains("422")) {
+                log.info("Deploy key already exists for {}/{} — skipping", repoOwner, repoName);
+                return;
+            }
+            throw new RuntimeException("Failed to register deploy key: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Remove a GitHub user from a repository's collaborators.
+     * Requires the GitHub App to have Administration: Read & Write permission.
+     *
+     * @param repoFullName      - owner/repo
+     * @param githubUsername    - GitHub username to remove
+     * @param installationToken - GitHub installation access token
+     */
+    public void removeRepositoryCollaborator(String repoFullName, String githubUsername,
+                                              String installationToken) {
+        String url = "https://api.github.com/repos/" + repoFullName + "/collaborators/" + githubUsername;
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(installationToken);
+        headers.set("Accept", "application/vnd.github+json");
+
+        try {
+            rest.exchange(url, HttpMethod.DELETE, new HttpEntity<>(headers), Void.class);
+            log.info("Removed {} as collaborator from {}", githubUsername, repoFullName);
+        } catch (Exception e) {
+            // 404 means they were never a collaborator — treat as success
+            if (!e.getMessage().contains("404")) throw new RuntimeException(
+                    "Failed to remove collaborator " + githubUsername + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Commit multiple files to a GitHub repository in a single atomic commit using the Git Data API.
+     *
+     * @param repoFullName      - owner/repo
+     * @param branch            - target branch (null = auto-detect default branch)
+     * @param commitMessage     - commit message
+     * @param files             - map of filePath → content (UTF-8 string)
+     * @param authorName        - committer name
+     * @param authorEmail       - committer email
+     * @param installationToken - GitHub installation access token
+     * @return map with sha, url, branch, filesCommitted
+     */
+    public Map<String, Object> commitFiles(
+            String repoFullName,
+            String branch,
+            String commitMessage,
+            Map<String, String> files,
+            String authorName,
+            String authorEmail,
+            String installationToken) throws Exception {
+
+        HttpHeaders readHeaders = new HttpHeaders();
+        readHeaders.setBearerAuth(installationToken);
+        readHeaders.set("Accept", "application/vnd.github+json");
+
+        HttpHeaders writeHeaders = new HttpHeaders();
+        writeHeaders.setBearerAuth(installationToken);
+        writeHeaders.set("Accept", "application/vnd.github+json");
+        writeHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+        // 1. Auto-detect default branch if not provided
+        String branchToUse = (branch != null && !branch.isBlank()) ? branch : null;
+        if (branchToUse == null) {
+            String repoUrl = "https://api.github.com/repos/" + repoFullName;
+            ResponseEntity<JsonNode> repoResp = rest.exchange(repoUrl, HttpMethod.GET, new HttpEntity<>(readHeaders), JsonNode.class);
+            branchToUse = repoResp.getBody().get("default_branch").asText();
+            log.info("Auto-detected default branch: {}", branchToUse);
+        }
+
+        // 2. Get latest commit SHA on the branch
+        String refUrl = "https://api.github.com/repos/" + repoFullName + "/git/ref/heads/" + branchToUse;
+        ResponseEntity<JsonNode> refResp = rest.exchange(refUrl, HttpMethod.GET, new HttpEntity<>(readHeaders), JsonNode.class);
+        String latestCommitSha = refResp.getBody().get("object").get("sha").asText();
+
+        // 3. Get base tree SHA from that commit
+        String baseCommitUrl = "https://api.github.com/repos/" + repoFullName + "/git/commits/" + latestCommitSha;
+        ResponseEntity<JsonNode> baseCommitResp = rest.exchange(baseCommitUrl, HttpMethod.GET, new HttpEntity<>(readHeaders), JsonNode.class);
+        String baseTreeSha = baseCommitResp.getBody().get("tree").get("sha").asText();
+
+        // 4. Create blobs for each file
+        List<Map<String, Object>> treeItems = new ArrayList<>();
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            Map<String, String> blobBody = new LinkedHashMap<>();
+            blobBody.put("content", Base64.getEncoder().encodeToString(
+                    entry.getValue().getBytes(StandardCharsets.UTF_8)));
+            blobBody.put("encoding", "base64");
+
+            ResponseEntity<JsonNode> blobResp = rest.exchange(
+                    "https://api.github.com/repos/" + repoFullName + "/git/blobs",
+                    HttpMethod.POST, new HttpEntity<>(blobBody, writeHeaders), JsonNode.class);
+            String blobSha = blobResp.getBody().get("sha").asText();
+
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("path", entry.getKey());
+            item.put("mode", "100644");
+            item.put("type", "blob");
+            item.put("sha", blobSha);
+            treeItems.add(item);
+        }
+
+        // 5. Create new tree on top of base tree
+        Map<String, Object> treeBody = new LinkedHashMap<>();
+        treeBody.put("base_tree", baseTreeSha);
+        treeBody.put("tree", treeItems);
+        ResponseEntity<JsonNode> treeResp = rest.exchange(
+                "https://api.github.com/repos/" + repoFullName + "/git/trees",
+                HttpMethod.POST, new HttpEntity<>(treeBody, writeHeaders), JsonNode.class);
+        String newTreeSha = treeResp.getBody().get("sha").asText();
+
+        // 6. Create new commit
+        String effectiveName = (authorName != null && !authorName.isBlank()) ? authorName : "Talenthium Live Coding";
+        String effectiveEmail = (authorEmail != null && !authorEmail.isBlank()) ? authorEmail : "livecoding@talenthium.tech";
+        Map<String, String> authorInfo = new LinkedHashMap<>();
+        authorInfo.put("name", effectiveName);
+        authorInfo.put("email", effectiveEmail);
+        authorInfo.put("date", Instant.now().toString());
+
+        Map<String, Object> newCommitBody = new LinkedHashMap<>();
+        newCommitBody.put("message", commitMessage);
+        newCommitBody.put("tree", newTreeSha);
+        newCommitBody.put("parents", List.of(latestCommitSha));
+        newCommitBody.put("author", authorInfo);
+        newCommitBody.put("committer", authorInfo);
+
+        ResponseEntity<JsonNode> newCommitResp = rest.exchange(
+                "https://api.github.com/repos/" + repoFullName + "/git/commits",
+                HttpMethod.POST, new HttpEntity<>(newCommitBody, writeHeaders), JsonNode.class);
+        String newCommitSha = newCommitResp.getBody().get("sha").asText();
+
+        // 7. Update branch reference
+        Map<String, Object> updateRefBody = new LinkedHashMap<>();
+        updateRefBody.put("sha", newCommitSha);
+        updateRefBody.put("force", false);
+        rest.exchange(
+                "https://api.github.com/repos/" + repoFullName + "/git/refs/heads/" + branchToUse,
+                HttpMethod.PATCH, new HttpEntity<>(updateRefBody, writeHeaders), JsonNode.class);
+
+        String htmlUrl = "https://github.com/" + repoFullName + "/commit/" + newCommitSha;
+        log.info("Committed {} files to {}/{} — {}", files.size(), repoFullName, branchToUse, newCommitSha);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sha", newCommitSha);
+        result.put("url", htmlUrl);
+        result.put("branch", branchToUse);
+        result.put("filesCommitted", files.size());
+        return result;
     }
 
     /**

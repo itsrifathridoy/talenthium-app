@@ -3,6 +3,7 @@ package tech.talenthium.projectservice.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import tech.talenthium.projectservice.entity.Contribution;
+import tech.talenthium.projectservice.entity.Contributor;
 import tech.talenthium.projectservice.entity.Project;
 
 import java.util.List;
@@ -15,4 +16,5 @@ public interface ContributionRepository extends JpaRepository<Contribution, Long
     boolean existsByCommitSha(String commitSha);
     boolean existsByCommitShaAndBranch(String commitSha, String branch);
     List<Contribution> findByProject(Project project);
+    long countByContributor(Contributor contributor);
 }

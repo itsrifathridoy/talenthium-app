@@ -56,15 +56,13 @@ public class InstallController {
         try {
             if (installationIdStr == null || userId == null) {
                 log.error("GitHub callback missing installation_id or userId");
-                return new RedirectView("/projects/create?error=missing_params");
+                return new RedirectView("http://localhost:3000/projects/create?error=missing_params");
             }
 
             long installationId = Long.parseLong(installationIdStr);
 
-            Path pemPath = resolvePrivateKey(privateKeyPath);
-
             // Generate JWT + token
-            String appJwt = JwtUtil.generateAppJwt(appId, pemPath);
+            String appJwt = gitHubAppAuthService.generateAppJWT();
             String installationToken = new GitHubService().createInstallationToken(installationId, appJwt);
 
             JsonNode response = new GitHubService().listInstallationRepos(installationToken);
@@ -72,14 +70,24 @@ public class InstallController {
 
             // Save mapping userId ↔ installationId
             githubInstallService.saveGithubInstallation(installationIdStr, Long.parseLong(userId), repos);
-            
+
+            // Fetch the GitHub account login and persist it on the user record
+            JsonNode installInfo = ghService.getInstallationInfo(installationId, appJwt);
+            if (installInfo != null && installInfo.path("account").has("login")) {
+                String githubUsername = installInfo.path("account").get("login").asText();
+                String githubId = installInfo.path("account").has("id")
+                        ? String.valueOf(installInfo.path("account").get("id").asLong()) : null;
+                userService.updateGithubInfo(Long.parseLong(userId), githubUsername, githubId);
+                log.info("Saved githubUsername={} for user {} during installation", githubUsername, userId);
+            }
+
             log.info("GitHub App successfully installed for user {} with installation ID {}", userId, installationId);
 
             // Redirect back to the create project page with success
             return new RedirectView("http://localhost:3000/projects/create?github=connected");
         } catch (Exception e) {
             log.error("Error processing GitHub callback: {}", e.getMessage(), e);
-            return new RedirectView("/projects/create?error=callback_failed");
+            return new RedirectView("http://localhost:3000/projects/create?error=callback_failed");
         }
     }
 
@@ -256,8 +264,7 @@ public class InstallController {
             }
 
             // Get installation token and fetch fresh repo list
-            Path pemPath = resolvePrivateKey(privateKeyPath);
-            String appJwt = JwtUtil.generateAppJwt(appId, pemPath);
+            String appJwt = gitHubAppAuthService.generateAppJWT();
             String installationToken = new GitHubService().createInstallationToken(
                     Long.parseLong(installation.getInstallationId()), 
                     appJwt
@@ -298,9 +305,14 @@ public class InstallController {
             ));
         } catch (Exception e) {
             log.error("Error fetching repositories for user {}: {}", userId, e.getMessage());
+            // Installation record exists but GitHub API call failed — still show as installed
+            // so the UI doesn't mislead the user into thinking the app isn't connected.
+            GithubAppInstallation existing = null;
+            try { existing = githubInstallService.getGithubInstallation(userId); } catch (Exception ignored) {}
+            boolean installedInDb = existing != null && existing.getInstallationId() != null;
             return ResponseEntity.ok(Map.of(
-                    "isInstalled", false,
-                    "message", "Error fetching repositories: " + e.getMessage(),
+                    "isInstalled", installedInDb,
+                    "message", "GitHub connected but repo list unavailable: " + e.getMessage(),
                     "repositories", new ArrayList<>()
             ));
         }
@@ -321,8 +333,7 @@ public class InstallController {
                 ));
             }
 
-            Path pemPath = resolvePrivateKey(privateKeyPath);
-            String appJwt = JwtUtil.generateAppJwt(appId, pemPath);
+            String appJwt = gitHubAppAuthService.generateAppJWT();
             ghService.deleteInstallation(Long.parseLong(installation.getInstallationId()), appJwt);
 
             githubInstallService.deleteGithubInstallation(userId);
